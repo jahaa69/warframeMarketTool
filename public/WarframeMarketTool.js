@@ -20,7 +20,7 @@ function isSameDay(dateA, dateB) {
 }
 
 // ============================================
-// Local Storage pour cache des données
+// Local Storage pour cache des données (fallback)
 // ============================================
 function getCachedData(mode) {
   const cached = localStorage.getItem(`market_${mode}`);
@@ -166,121 +166,124 @@ const Config = {
 // ============================================
 async function runMarketTool(mode) {
   window._setStatus("Chargement des items…", "loading");
-
   const { filterItems, filterOrders } = Config[mode];
 
-  const itemsResponse = await apiGet("http://localhost:3000/api/items");
-  const items = Object.values(itemsResponse.data).filter(filterItems);
+  try {
+    const itemsResponse = await apiGet("http://localhost:3000/api/items");
+    const items = Object.values(itemsResponse.data).filter(filterItems);
 
-  const table = [];
-  let i = 0;
+    const table = [];
+    const batchSize = 5;
 
-  for (const item of items) {
-    i++;
-    window._setStatus(`(${i}/${items.length}) ${item.slug}`, "loading");
+    for (let batchStart = 0; batchStart < items.length; batchStart += batchSize) {
+      const batch = items.slice(batchStart, batchStart + batchSize);
 
-    let orders;
-    try {
-      orders = (await apiGet(`http://localhost:3000/api/orders/${item.slug}`)).data;
-    } catch {
-      continue;
+      await Promise.all(batch.map(async (item, idx) => {
+        const pos = batchStart + idx + 1;
+        window._setStatus(`(${pos}/${items.length}) ${item.slug}`, "loading");
+        try {
+          const orders = (await apiGet(`http://localhost:3000/api/orders/${item.slug}`)).data;
+          const filteredOrders = orders.filter(filterOrders);
+          if (filteredOrders.length > 0) {
+            table.push({ item: item.slug, orders: filteredOrders });
+            if (window.dbAPI?.saveHistoricalPrices) {
+              await window.dbAPI.saveHistoricalPrices(item.slug, filteredOrders.slice(0, 50)).catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.warn(`Erreur ${item.slug}:`, err.message);
+        }
+      }));
+
+      if (batchStart + batchSize < items.length) {
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
 
-    for (const o of orders.filter(filterOrders)) {
-      table.push({
-        item: item.slug,
-        price: o.platinum,
-        quantity: o.quantity,
-        rank: o.rank
-      });
-    }
-
-    await new Promise(r => setTimeout(r, 400));
+    return computeLiquidityScore(table);
+  } catch (error) {
+    console.error('Erreur runMarketTool:', error);
+    throw error;
   }
-
-  return computeLiquidityScore(table);
 }
 
 // ============================================
 // Liquidity score
 // ============================================
 function computeLiquidityScore(table) {
-  const grouped = {};
-
-  for (const row of table) {
-    if (!grouped[row.item]) grouped[row.item] = [];
-    grouped[row.item].push(row);
-  }
-
-  return Object.entries(grouped)
-    .map(([item, orders]) => {
-      const totalQty = orders.reduce((s, o) => s + o.quantity, 0);
-      const weightedSum = orders.reduce((s, o) => s + o.price * o.quantity, 0);
-      const weightedAvgPrice = totalQty ? Math.floor(weightedSum / totalQty) : 0;
-      const liquidityScore = totalQty
+  return table
+    .map(({ item, orders }) => {
+      const totalQty = orders.reduce((s, o) => s + (o.quantity || 1), 0);
+      const weightedSum = orders.reduce((s, o) => s + o.platinum * (o.quantity || 1), 0);
+      const weightedAvgPrice = totalQty > 0 ? Math.floor(weightedSum / totalQty) : 0;
+      const liquidityScore = weightedAvgPrice > 0
         ? Math.floor(weightedAvgPrice * Math.log10(totalQty + 1))
         : 0;
-      return {
-        item,
-        totalQty,
-        orders: orders.length,
-        weightedAvgPrice,
-        liquidityScore
-      };
+      return { item, totalQty, orders: orders.length, weightedAvgPrice, liquidityScore };
     })
     .sort((a, b) => b.liquidityScore - a.liquidityScore)
     .slice(0, 20);
 }
 
 // ============================================
-// Get Market Data (avec cache)
+// Get Market Data (avec cache et BDD)
 // ============================================
 async function getMarketData(mode) {
+  // Essayer d'abord la BDD
+  try {
+    const dbData = await window.dbAPI.getMarketData(mode);
+    if (dbData && dbData.length > 0) {
+      return dbData.map(d => ({
+        item_name: d.item_slug,
+        weightedAvgPrice: d.weighted_avg_price,
+        ratio: d.liquidity_score,
+        totalQty: d.total_quantity,
+        orders: d.orders_count
+      }));
+    }
+  } catch (error) {
+    console.warn('Erreur BDD, utilisation du cache local:', error);
+  }
+
+  // Fallback au cache local
   const cached = getCachedData(mode);
   if (cached) {
     return cached;
   }
 
-  const apiData = await runMarketTool(mode);
-  
-  const formattedData = apiData.map(i => ({
-    item_name: i.item,
-    weightedAvgPrice: i.weightedAvgPrice,
-    ratio: i.liquidityScore
-  }));
-  
-  setCachedData(mode, formattedData);
-  
-  return formattedData;
+  // Récupérer depuis l'API
+  try {
+    const apiData = await runMarketTool(mode);
+    const formattedData = apiData.map(i => ({
+      item_name: i.item,
+      weightedAvgPrice: i.weightedAvgPrice,
+      ratio: i.liquidityScore,
+      totalQty: i.totalQty,
+      orders: i.orders
+    }));
+
+    // Sauvegarder dans la BDD
+    try {
+      await window.dbAPI.saveMarketData(mode, apiData);
+    } catch (error) {
+      console.error('Erreur sauvegarde BDD:', error);
+    }
+
+    // Et dans le cache local
+    setCachedData(mode, formattedData);
+
+    return formattedData;
+  } catch (error) {
+    console.error('Erreur récupération API:', error);
+    throw error;
+  }
 }
 
 // ============================================
 // UI
 // ============================================
 function renderTable(data, mode) {
-  const result = document.getElementById("result");
-
-  let html = `
-    <table>
-      <tr>
-        <th>Item</th>
-        <th>Prix moyen</th>
-        <th>Ratio</th>
-      </tr>
-  `;
-
-  for (const d of data) {
-    html += `
-      <tr>
-        <td>${d.item_name || d.item}</td>
-        <td>${d.weightedAvgPrice}</td>
-        <td>${d.ratio}</td>
-      </tr>
-    `;
-  }
-
-  result.innerHTML = html + "</table>";
-  window._setStatus("Terminé ✔");
+  window._renderTableStyled(data, mode);
 }
 
 // ============================================
@@ -290,8 +293,14 @@ function renderTable(data, mode) {
   const btn = document.getElementById(mode.charAt(0).toUpperCase() + mode.slice(1));
   btn.onclick = async () => {
     window._setStatus("Chargement…");
-    const data = await getMarketData(mode);
-    renderTable(data, mode);
+    try {
+      const data = await getMarketData(mode);
+      renderTable(data, mode);
+      window._setStatus("Terminé ✔");
+    } catch (error) {
+      console.error(error);
+      window._setStatus("Erreur lors du chargement", "error");
+    }
   };
 });
 
@@ -303,7 +312,7 @@ document.getElementById("ExportCSV").onclick = async () => {
   
   try {
     for (const mode of modes) {
-      const data = getCachedData(mode);
+      const data = await getMarketData(mode);
       if (data) {
         const csv = generateCSV(data, mode);
         const date = new Date().toISOString().split('T')[0];
@@ -320,7 +329,7 @@ document.getElementById("ExportCSV").onclick = async () => {
     window._setStatus("Erreur lors de l'export - Utilisation du téléchargement classique...");
     
     for (const mode of modes) {
-      const data = getCachedData(mode);
+      const data = await getMarketData(mode);
       if (data) {
         const csv = generateCSV(data, mode);
         const date = new Date().toISOString().split('T')[0];
@@ -342,9 +351,12 @@ document.getElementById("InitDB").onclick = async () => {
       const formattedData = data.map(i => ({
         item_name: i.item,
         weightedAvgPrice: i.weightedAvgPrice,
-        ratio: i.liquidityScore
+        ratio: i.liquidityScore,
+        totalQty: i.totalQty,
+        orders: i.orders
       }));
       setCachedData(mode, formattedData);
+      await window.dbAPI.saveMarketData(mode, data);
     }
 
     window._setStatus("Données initialisées ✔");
@@ -354,11 +366,12 @@ document.getElementById("InitDB").onclick = async () => {
   }
 };
 
-document.getElementById("ClearCache").onclick = () => {
-  localStorage.removeItem("market_arcane");
-  localStorage.removeItem("market_mod");
-  localStorage.removeItem("market_warframe");
-  localStorage.removeItem("market_weapon");
+document.getElementById("ClearCache").onclick = async () => {
+  const modes = ["arcane", "mod", "warframe", "weapon"];
+  modes.forEach(m => localStorage.removeItem(`market_${m}`));
+  if (window.dbAPI?.clearTodayData) {
+    await Promise.all(modes.map(m => window.dbAPI.clearTodayData(m).catch(() => {})));
+  }
   window._setStatus("Cache effacé ✔");
 };
 

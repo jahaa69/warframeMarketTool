@@ -1,8 +1,11 @@
 // preload.js
-// Ce fichier s'exécute dans un contexte isolé entre Electron et le renderer.
-// Pour l'instant ton app n'a pas besoin d'APIs natives spéciales,
-// donc ce fichier est vide mais requis pour la sécurité contextIsolation.
+const { contextBridge, ipcRenderer } = require('electron');
 
-// Si tu veux exposer des APIs Node.js au frontend plus tard :
-// const { contextBridge, ipcRenderer } = require("electron");
-// contextBridge.exposeInMainWorld("electronAPI", { ... });
+// Exposer les APIs de base de données au renderer
+contextBridge.exposeInMainWorld('dbAPI', {
+  saveMarketData: (mode, data) => ipcRenderer.invoke('save-market-data', mode, data),
+  saveHistoricalPrices: (itemSlug, orders) => ipcRenderer.invoke('save-historical-prices', itemSlug, orders),
+  getHistoricalPrices: (itemSlug) => ipcRenderer.invoke('get-historical-prices', itemSlug),
+  getMarketData: (mode) => ipcRenderer.invoke('get-market-data', mode),
+  clearTodayData: (mode) => ipcRenderer.invoke('clear-today-data', mode),
+});

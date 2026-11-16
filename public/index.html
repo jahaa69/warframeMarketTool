@@ -5,6 +5,7 @@
   <title>Warframe Market Tool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --gold: #c8a84b;
@@ -373,11 +374,27 @@
       text-transform: uppercase;
     }
 
-    @media (max-width: 700px) {
-      .panels-row { grid-template-columns: 1fr; }
-      .main { padding: 14px; }
-      .header { padding: 16px; }
+    .data-row:hover { cursor: pointer; }
+
+    .details-row {
+      background: var(--bg-card);
     }
+
+    .item-details {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .details-info {
+      display: flex;
+      gap: 24px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .details-info p { margin: 0; }
   </style>
 </head>
 <body>
@@ -385,7 +402,7 @@
 <header class="header">
   <div class="logo-mark"></div>
   <h1>Warframe <span>Market Tool</span></h1>
-  <div class="header-right">v1.0 // LOCAL</div>
+  <div class="header-right">v2.0 // LOCAL</div>
 </header>
 
 <main class="main">
@@ -449,10 +466,22 @@
       const price = d.weightedAvgPrice ?? '—';
       const ratio = d.ratio ?? '—';
       const pct = maxRatio > 0 ? Math.round((ratio / maxRatio) * 100) : 0;
-      return `<tr>
+      const itemSlug = d.item_name || d.item;
+      return `<tr class="data-row" data-item="${itemSlug}">
         <td><span class="td-item">${name}</span></td>
         <td><span class="td-price">${price}<small>pt</small></span></td>
         <td><div class="rank-bar"><span class="rank-val">${ratio}</span><div class="rank-track"><div class="rank-fill" style="width:${pct}%"></div></div></div></td>
+      </tr>
+      <tr class="details-row" style="display: none;">
+        <td colspan="3">
+          <div class="item-details">
+            <canvas id="chart-${itemSlug.replace(/[^a-zA-Z0-9]/g, '')}" width="400" height="200"></canvas>
+            <div class="details-info">
+              <p><strong>Quantité totale:</strong> ${d.totalQty || 'N/A'}</p>
+              <p><strong>Nombre d'ordres:</strong> ${d.orders || 'N/A'}</p>
+            </div>
+          </div>
+        </td>
       </tr>`;
     }).join('');
     result.innerHTML = `<div class="table-wrap">
@@ -465,7 +494,124 @@
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+
+    // Ajouter les event listeners pour les détails
+    document.querySelectorAll('.data-row').forEach(row => {
+      row.addEventListener('click', async () => {
+        const itemSlug = row.dataset.item;
+        const detailsRow = row.nextElementSibling;
+        if (detailsRow.style.display === 'none') {
+          detailsRow.style.display = 'table-row';
+          await loadItemDetails(itemSlug);
+        } else {
+          detailsRow.style.display = 'none';
+        }
+      });
+    });
   };
+
+  async function loadItemDetails(itemSlug) {
+    try {
+      const historicalData = await window.dbAPI.getHistoricalPrices(itemSlug);
+      const canvasId = `chart-${itemSlug.replace(/[^a-zA-Z0-9]/g, '')}`;
+      const canvas = document.getElementById(canvasId);
+
+      if (canvas.chart) canvas.chart.destroy();
+
+      if (!historicalData || historicalData.length === 0) {
+        canvas.style.display = 'none';
+        if (!canvas.parentElement.querySelector('.no-data-msg')) {
+          canvas.insertAdjacentHTML('afterend', '<p class="no-data-msg" style="color:#3a4a5a;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;padding:12px 0">Aucun historique — revenez après une prochaine initialisation</p>');
+        }
+        return;
+      }
+
+      canvas.style.display = '';
+      canvas.parentElement.querySelector('.no-data-msg')?.remove();
+
+      const labels = historicalData.map(d => {
+        const [y, m, day] = d.date.split('-');
+        return `${day}/${m}/${y.slice(2)}`;
+      });
+      const prices = historicalData.map(d => d.price);
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+      const ctx = canvas.getContext('2d');
+
+      const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+      gradient.addColorStop(0, 'rgba(200, 168, 75, 0.25)');
+      gradient.addColorStop(1, 'rgba(200, 168, 75, 0.0)');
+
+      canvas.chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Prix moyen (pt)',
+            data: prices,
+            borderColor: '#c8a84b',
+            backgroundColor: gradient,
+            pointBackgroundColor: '#c8a84b',
+            pointBorderColor: '#0d1117',
+            pointBorderWidth: 1.5,
+            pointRadius: historicalData.length === 1 ? 5 : 3,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+            tension: 0.35,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#7a8a9a',
+                font: { family: 'Rajdhani', size: 11 },
+                boxWidth: 12,
+              }
+            },
+            tooltip: {
+              backgroundColor: '#111820',
+              borderColor: 'rgba(200, 168, 75, 0.35)',
+              borderWidth: 1,
+              titleColor: '#7a8a9a',
+              bodyColor: '#c8a84b',
+              padding: 10,
+              callbacks: {
+                label: ctx => `  ${ctx.parsed.y} pt`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: false,
+              min: Math.max(0, minPrice - Math.ceil((maxPrice - minPrice) * 0.15 + 1)),
+              grid: { color: 'rgba(200, 168, 75, 0.08)', drawBorder: false },
+              ticks: {
+                color: '#7a8a9a',
+                font: { family: 'Share Tech Mono', size: 10 },
+                callback: v => v + ' pt'
+              }
+            },
+            x: {
+              grid: { color: 'rgba(200, 168, 75, 0.04)', drawBorder: false },
+              ticks: {
+                color: '#7a8a9a',
+                font: { family: 'Share Tech Mono', size: 10 },
+                maxRotation: 45,
+                autoSkip: true,
+                maxTicksLimit: 10,
+              }
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Erreur lors du chargement des détails:', error);
+    }
+  }
 </script>
 
 </body>

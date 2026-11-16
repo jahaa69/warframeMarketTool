@@ -1,12 +1,9 @@
-import { app, BrowserWindow } from "electron";
-import { fileURLToPath } from "url";
-import path from "path";
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { app, BrowserWindow, ipcMain } = require("electron");
+const path = require("path");
+const express = require("express");
+const fetch = require("node-fetch");
+const cors = require("cors");
+const { saveMarketData, saveHistoricalPrices, getHistoricalPrices, getMarketData, clearTodayData } = require('./database.js');
 
 // ============================================
 // Serveur Express embarqué
@@ -17,12 +14,24 @@ const PORT = 3000;
 server.use(cors());
 server.use(express.static(path.join(__dirname, "public")));
 
+const WF_HEADERS = {
+  "User-Agent": "WarframeMarketTool/1.0",
+  "Accept": "application/json",
+  "Platform": "pc",
+  "Language": "en",
+};
+
 server.get("/api/items", async (req, res) => {
   try {
-    const response = await fetch("https://api.warframe.market/v2/items");
+    const response = await fetch("https://api.warframe.market/v2/items", { headers: WF_HEADERS });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Warframe Market API returned ${response.status}: ${body}`);
+    }
     const data = await response.json();
     res.json(data);
   } catch (err) {
+    console.error('Error fetching items:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -31,11 +40,17 @@ server.get("/api/orders/:slug", async (req, res) => {
   const { slug } = req.params;
   try {
     const response = await fetch(
-      `https://api.warframe.market/v2/orders/item/${slug}`
+      `https://api.warframe.market/v2/orders/item/${slug}`,
+      { headers: WF_HEADERS }
     );
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Warframe Market API returned ${response.status}: ${body}`);
+    }
     const data = await response.json();
     res.json(data);
   } catch (err) {
+    console.error(`Error fetching orders for ${slug}:`, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -70,6 +85,27 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // Handlers IPC pour la base de données
+  ipcMain.handle('save-market-data', async (event, mode, data) => {
+    await saveMarketData(mode, data);
+  });
+
+  ipcMain.handle('save-historical-prices', async (event, itemSlug, orders) => {
+    await saveHistoricalPrices(itemSlug, orders);
+  });
+
+  ipcMain.handle('get-historical-prices', async (event, itemSlug) => {
+    return await getHistoricalPrices(itemSlug);
+  });
+
+  ipcMain.handle('get-market-data', async (event, mode) => {
+    return await getMarketData(mode);
+  });
+
+  ipcMain.handle('clear-today-data', async (event, mode) => {
+    await clearTodayData(mode);
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

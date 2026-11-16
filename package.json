@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Warframe Market Tool - Desktop App",
   "main": "main.js",
-  "type": "module",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
@@ -39,7 +38,8 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^2.7.0",
+    "sqlite3": "^6.0.1"
   },
   "devDependencies": {
     "electron": "^41.5.0",
