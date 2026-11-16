@@ -1,7 +1,8 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const { app } = require('electron');
 
-const dbPath = path.join(__dirname, 'warframe_market.db');
+const dbPath = path.join(app.getPath('userData'), 'warframe_market.db');
 const db = new sqlite3.Database(dbPath);
 
 // Créer les tables si elles n'existent pas
