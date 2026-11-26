@@ -169,7 +169,7 @@ async function runMarketTool(mode) {
   const { filterItems, filterOrders } = Config[mode];
 
   try {
-    const itemsResponse = await apiGet("http://localhost:3000/api/items");
+    const itemsResponse = await apiGet("/api/items");
     const items = Object.values(itemsResponse.data).filter(filterItems);
 
     const table = [];
@@ -182,7 +182,7 @@ async function runMarketTool(mode) {
         const pos = batchStart + idx + 1;
         window._setStatus(`(${pos}/${items.length}) ${item.slug}`, "loading");
         try {
-          const orders = (await apiGet(`http://localhost:3000/api/orders/${item.slug}`)).data;
+          const orders = (await apiGet(`/api/orders/${item.slug}`)).data;
           const filteredOrders = orders.filter(filterOrders);
           if (filteredOrders.length > 0) {
             table.push({ item: item.slug, orders: filteredOrders });

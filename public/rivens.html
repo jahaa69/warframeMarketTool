@@ -49,6 +49,9 @@
   .verdict.moyen{color:var(--gold);border-color:var(--gold);background:var(--gold-glow)}
   .verdict.attendre{color:var(--accent-red);border-color:var(--accent-red);background:rgba(200,74,58,.08)}
   .verdict.inconnu{color:var(--text-muted);border-color:var(--text-dim)}
+  .setup{padding:8px 12px;margin-bottom:8px;border-left:3px solid var(--accent-red);background:rgba(200,74,58,.08);color:var(--accent-red);font-weight:600}
+  .setup a{color:var(--gold);margin-left:6px}
+  td.listed{color:var(--text-muted);white-space:nowrap} td.listed.undercut{color:var(--accent-red);font-weight:700}
   .advice{font:11px 'Share Tech Mono',monospace;margin-top:3px;color:var(--text-muted);cursor:help}
   .advice.haute{color:var(--success)} .advice.moyenne{color:var(--gold)} .advice.faible{color:var(--accent-red)}
   .badge{font-size:11px;font-weight:700;letter-spacing:.08em;padding:2px 6px;background:var(--success);color:#06210f}
@@ -64,7 +67,7 @@
 <header class="header">
   <div class="logo-mark"></div>
   <h1>Rivens <span>// warframe.market</span></h1>
-  <div class="header-right"><a class="btn" href="index.html">← Marché</a></div>
+  <div class="header-right"><a class="btn" href="index.html">← Marché</a> <a class="btn" href="settings.html" title="Paramètres et diagnostic">⚙ Paramètres</a></div>
 </header>
 <main class="main">
 
@@ -74,12 +77,14 @@
   <label title="Retire de rivens.json les rivens qui ne sont plus dans ton inventaire (vendus, fusionnés). Sauvegarde : rivens.json.bak"><input id="prune" type="checkbox" checked> retirer les absents</label>
   <button id="btnReload">Recharger</button>
   <button id="btnPrices" class="primary">Calculer les prix</button>
+  <button id="btnBulk" title="Met en vente tous les rivens dont la catégorie est au vert (bon moment), pas déjà en vente, avec un prix et une polarité. Simulation si « Envoyer pour de vrai » est décoché ; sinon confirmation pour chacun.">Vendre les 🟢</button>
   <span class="live"><label><input id="live" type="checkbox"> Envoyer pour de vrai</label></span>
 </div>
+<div id="setup" class="setup" hidden></div>
 <div id="msg"></div>
 
 <table>
-  <thead><tr><th>Arme</th><th>Stats</th><th>MR / rolls</th><th>Annonces</th><th>Min</th><th>Médiane</th><th>Prix conseillé</th><th>Polarité</th><th></th></tr></thead>
+  <thead><tr><th>Arme</th><th>Stats</th><th>MR / rolls</th><th>Annonces</th><th>Min</th><th>Médiane</th><th title="Prix de ton annonce actuelle sur warframe.market">Ton prix en vente</th><th>Prix conseillé</th><th>Polarité</th><th></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <div id="log"></div>
@@ -127,32 +132,36 @@ function render() {
       mk('td', { textContent: r.weapon }), stats,
       mk('td', { textContent: `${r.mastery_level ?? '?'} / ${r.re_rolls ?? '?'}` }),
       mk('td', { textContent: r.n ?? '' }), mk('td', { textContent: r.min ?? '' }), mk('td', { textContent: r.median ?? '' }),
+      mk('td', { className: 'listed' + (r.listed_price && r.min && r.min < r.listed_price ? ' undercut' : ''),
+                 title: r.listed_price && r.min && r.min < r.listed_price ? `Un vendeur propose ${r.min} pl, moins cher que toi` : '',
+                 textContent: r.listed_price ? `${r.listed_price} pl` : '' }),
       priceCell, mk('td', {}, pol),
       mk('td', {}, r.auction_id ? mk('span', { className: 'badge', textContent: 'EN VENTE ' }) : '', sell, ' ', unsell, ' ', graph));
     tb.append(tr);
   });
-  msg(`${rivens.length} riven(s) — ${cfg.hasToken ? 'token trouvé' : 'pas de token (simulation seulement)'}`);
+  msg(`${rivens.length} riven(s) — ${cfg.hasToken ? 'token trouvé' : 'pas de token : vente et retrait en simulation (à renseigner dans ⚙ Paramètres)'}`);
 }
 
 async function reload() {
   const res = await window.riven.load();
   if (!res.ok) { rivens = []; render(); return msg(res.error); }
   rivens = res.rivens; render();
+  if (res.firstRun) msg('Aucun riven pour le moment : clique sur « Importer depuis AlecaFrame » pour charger ton inventaire.');
 }
 
 async function doSell(i) {
   const r = rivens[i], price = Number(r.price);
   if (!price || price < 1) return msg('Prix invalide.');
-  if (!r.polarity) return msg("Choisis la polarité (l'OCR ne la lit pas).");
+  if (!r.polarity) return msg('Choisis la polarité de ce riven.');
   const out = await window.riven.sell({ riven: r, price, polarity: r.polarity, live: $('live').checked });
-  if (out.ok && out.auctionId) { r.auction_id = out.auctionId; await persist(); render(); }
+  if (out.ok && out.auctionId) { r.auction_id = out.auctionId; r.listed_price = price; await persist(); render(); }
   log(`[Vendre] ${r.weapon}\n${out.text}`);
 }
 
 async function doUnsell(i) {
   const r = rivens[i];
   const out = await window.riven.unsell({ riven: r, live: $('live').checked });
-  if (out.ok && $('live').checked) { delete r.auction_id; await persist(); render(); }
+  if (out.ok && $('live').checked) { delete r.auction_id; delete r.listed_price; r.listed = false; await persist(); render(); }
   log(`[Retirer] ${r.weapon}\n${out.text}`);
 }
 
@@ -183,6 +192,39 @@ $('btnImport').onclick = async () => {
   log(`[Import AlecaFrame]\n${out.text}`); await reload(); if (!out.ok) msg(out.text); $('btnImport').disabled = false;
 };
 $('btnReload').onclick = reload;
+
+// Vente groupée : rivens dont la catégorie est au vert. Passe par doSell (simulation ou confirmation native une par une).
+$('btnBulk').onclick = async () => {
+  $('btnBulk').disabled = true;
+  const done = [], skipped = [];
+  for (let i = 0; i < rivens.length; i++) {
+    const r = rivens[i];
+    if (r.auction_id) continue;                                   // déjà en vente
+    msg(`Vente groupée : analyse ${i + 1}/${rivens.length} (${r.weapon})…`);
+    const b = await window.riven.barometer(r);
+    if (!b.ok || b.verdict.level !== 'bon') continue;
+    if (!(Number(r.price) >= 1) || !r.polarity) { skipped.push(`${r.weapon} (prix ou polarité manquant)`); continue; }
+    await doSell(i);
+    done.push(r.weapon);
+  }
+  const mode = $('live').checked ? 'envoi réel, confirmé un par un' : 'SIMULATION, rien envoyé';
+  log(`[Vente groupée 🟢] ${done.length} riven(s) traité(s) (${mode}) : ${done.join(', ') || 'aucun au vert'}` +
+      (skipped.length ? `
+Ignorés : ${skipped.join(', ')}` : ''));
+  msg(`Vente groupée terminée : ${done.length} riven(s) (${mode}).`);
+  $('btnBulk').disabled = false;
+};
+
+// Premier lancement : bandeau si quelque chose de bloquant manque (lien vers les Paramètres)
+async function checkSetup() {
+  const list = await window.settings.diagnostics();
+  const bad = list.filter(d => d.level === 'error');
+  const box = $('setup');
+  if (!bad.length) { box.hidden = true; return; }
+  box.replaceChildren(`⚠ À régler avant d'utiliser l'import : ${bad.map(d => d.label).join(', ')}. `,
+    mk('a', { href: 'settings.html', textContent: 'Ouvrir les paramètres' }));
+  box.hidden = false;
+}
 
 // "Courbe" = est-ce le bon moment pour vendre ? Deux panneaux sur les 90 mêmes jours, sans librairie :
 //  haut : marché de la catégorie de l'arme (warframe.market : ventes conclues de rivens voilés, 90 j) + verdict
@@ -296,7 +338,7 @@ $('chartClose').onclick = () => $('chart').close();
 // du formulaire (retour arrière / cache de navigation depuis la page Marché).
 window.addEventListener('pageshow', () => { $('live').checked = false; });
 
-(async () => { cfg = await window.riven.config(); await reload(); })();
+(async () => { cfg = await window.riven.config(); await reload(); checkSetup(); })();
 </script>
 </body>
 </html>

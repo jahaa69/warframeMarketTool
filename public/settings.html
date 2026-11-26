@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<!-- CSP : scripts inline uniquement, polices Google Fonts (comme les autres pages) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'">
+<title>Paramètres – Warframe Market Tool</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --gold:#c8a84b;--gold-dim:#8a6f2e;--gold-glow:rgba(200,168,75,.15);
+    --bg-void:#080a0c;--bg-panel:#0d1117;--bg-card:#111820;--bg-row:#0f151d;
+    --border:rgba(200,168,75,.2);--border-bright:rgba(200,168,75,.5);
+    --text-primary:#e8dfc8;--text-muted:#7a8a9a;--text-dim:#3a4a5a;
+    --accent-blue:#3a8fc8;--accent-red:#c84a3a;--success:#4ac88a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:500 15px 'Rajdhani',sans-serif;background:var(--bg-void);color:var(--text-primary)}
+  .header{display:flex;align-items:center;gap:16px;padding:22px 32px 18px;border-bottom:1px solid var(--border);position:relative}
+  .header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+  .logo-mark{width:32px;height:32px;border:1.5px solid var(--gold);transform:rotate(45deg);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .logo-mark::after{content:'';width:14px;height:14px;background:var(--gold)}
+  h1{font-size:20px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin:0}
+  h1 span{color:var(--text-muted);font-weight:400}
+  .header-right{margin-left:auto;display:flex;gap:8px}
+  .main{padding:24px 32px;display:flex;flex-direction:column;gap:16px;max-width:980px}
+  .panel{background:var(--bg-panel);border:1px solid var(--border)}
+  .panel-header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border)}
+  .marker{width:3px;height:13px;background:var(--gold)}
+  .panel-label{font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--text-muted)}
+  .panel-body{padding:14px;display:flex;flex-direction:column;gap:12px}
+  a.btn,button{font:600 13px 'Rajdhani',sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:6px 16px;cursor:pointer;
+    border:1px solid var(--border);background:transparent;color:var(--text-primary);text-decoration:none;display:inline-block;
+    transition:all .12s ease;clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%)}
+  a.btn:hover,button:hover:not(:disabled){border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
+  button.primary{border-color:rgba(200,168,75,.35);color:var(--gold)}
+  button.danger{border-color:rgba(200,74,58,.35);color:var(--accent-red)}
+  button:disabled{opacity:.4;cursor:default}
+  .field{display:grid;grid-template-columns:230px 1fr auto;gap:10px;align-items:center}
+  .field label{color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:6px}
+  input[type=text],input[type=password]{background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);padding:6px 9px;font:13px 'Share Tech Mono',monospace;width:100%}
+  input:focus{outline:none;border-color:var(--gold)}
+  .row-actions{display:flex;gap:6px}
+  .hint{grid-column:2 / 4;font:12px 'Share Tech Mono',monospace;color:var(--text-dim);margin-top:-6px}
+  .check{display:flex;align-items:center;gap:8px;color:var(--text-primary)}
+  /* bulle d'aide "?" */
+  .help{position:relative;display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;
+        border:1px solid var(--gold-dim);color:var(--gold);font-size:11px;font-weight:700;cursor:help;flex-shrink:0}
+  .help .bubble{display:none;position:absolute;left:24px;top:-6px;z-index:10;width:380px;padding:10px 12px;background:var(--bg-card);
+        border:1px solid var(--border-bright);color:var(--text-primary);font:500 13px/1.45 'Rajdhani',sans-serif;letter-spacing:0;text-transform:none;
+        box-shadow:0 6px 20px #000a}
+  .help:hover .bubble,.help:focus .bubble{display:block}
+  .bubble ol{margin:6px 0 0 18px;padding:0} .bubble b{color:var(--gold)} .bubble .warn{color:var(--accent-red);display:block;margin-top:6px}
+  /* diagnostic */
+  .diag{display:grid;grid-template-columns:22px 230px 1fr;gap:6px 10px;align-items:start;font-size:14px}
+  .diag .st{font-weight:700;text-align:center}
+  .diag .ok{color:var(--success)} .diag .warn{color:var(--gold)} .diag .error{color:var(--accent-red)}
+  .diag .det{font:12px 'Share Tech Mono',monospace;color:var(--text-muted);word-break:break-all}
+  .diag .tip{grid-column:3;font-size:13px;color:var(--text-muted);margin-top:-4px}
+  #summary{font-weight:600;padding:6px 10px;border-left:3px solid var(--text-dim)}
+  #summary.ok{color:var(--success);border-color:var(--success)} #summary.warn{color:var(--gold);border-color:var(--gold)} #summary.error{color:var(--accent-red);border-color:var(--accent-red)}
+  #msg{font:12px 'Share Tech Mono',monospace;color:var(--text-muted);min-height:16px}
+  #msg.err{color:var(--accent-red)} #msg.ok{color:var(--success)}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="logo-mark"></div>
+  <h1>Paramètres <span>// Warframe Market Tool</span></h1>
+  <div class="header-right"><a class="btn" href="index.html">← Marché</a><a class="btn" href="rivens.html">Rivens</a></div>
+</header>
+<main class="main">
+
+  <div class="panel">
+    <div class="panel-header"><div class="marker"></div><span class="panel-label">Diagnostic – ce qu'il manque</span></div>
+    <div class="panel-body">
+      <div id="summary">Vérification…</div>
+      <div class="diag" id="diag"></div>
+      <div><button id="btnDiag">Revérifier</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><div class="marker"></div><span class="panel-label">warframe.market</span></div>
+    <div class="panel-body">
+      <div class="field">
+        <label>Token (JWT)
+          <span class="help" tabindex="0">?<span class="bubble">
+            Le token permet à l'app de <b>mettre en vente</b> et de <b>retirer</b> tes rivens sur warframe.market.
+            Sans lui, tout le reste marche (prix, courbes, import) et la vente reste en simulation.
+            <ol>
+              <li>Connecte-toi sur <b>warframe.market</b> dans Chrome, Edge ou Firefox.</li>
+              <li>Appuie sur <b>F12</b> pour ouvrir les outils de développement.</li>
+              <li>Onglet <b>Application</b> (Chrome / Edge) ou <b>Stockage</b> (Firefox) › <b>Cookies</b> › https://warframe.market.</li>
+              <li>Copie la <b>valeur</b> du cookie nommé <b>JWT</b> et colle-la ici.</li>
+            </ol>
+            <span class="warn">Ne le partage jamais : il donne accès à ton compte. Il est enregistré uniquement sur ce PC (fichier .env) et l'app ne le réaffiche jamais.</span>
+          </span></span>
+        </label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false">
+        <div class="row-actions"><button id="saveToken" class="primary">Enregistrer</button><button id="clearToken" class="danger">Effacer</button></div>
+        <div class="hint" id="tokenState"></div>
+      </div>
+      <div class="field">
+        <label>Pseudo
+          <span class="help" tabindex="0">?<span class="bubble">
+            Ton pseudo <b>warframe.market</b> (en général identique à ton pseudo en jeu). Il sert à retrouver tes annonces
+            pour afficher « EN VENTE », ton prix et t'alerter si quelqu'un vend moins cher.
+            Laisse vide pour utiliser celui qu'AlecaFrame a mémorisé.
+          </span></span>
+        </label>
+        <input id="WFM_USERNAME" type="text" spellcheck="false" placeholder="automatique (AlecaFrame)">
+        <div class="row-actions"><button data-save="WFM_USERNAME">Enregistrer</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><div class="marker"></div><span class="panel-label">Fichiers et AlecaFrame</span></div>
+    <div class="panel-body">
+      <div class="field">
+        <label>Fichier des rivens
+          <span class="help" tabindex="0">?<span class="bubble">
+            Chemin complet du fichier <b>rivens.json</b> où l'app garde tes rivens. L'historique des prix et l'état des
+            notifications sont enregistrés dans le même dossier. Laisse vide pour l'emplacement par défaut.
+          </span></span>
+        </label>
+        <input id="RIVENS_JSON" type="text" spellcheck="false" placeholder="emplacement par défaut">
+        <div class="row-actions"><button data-save="RIVENS_JSON">Enregistrer</button></div>
+      </div>
+      <div class="field">
+        <label>Dossier AlecaFrame
+          <span class="help" tabindex="0">?<span class="bubble">
+            Dossier de données d'AlecaFrame, qui contient <b>lastData.dat</b> (ton inventaire). Par défaut :
+            <b>%LOCALAPPDATA%\AlecaFrame</b>. À changer seulement si AlecaFrame est installé ailleurs.
+          </span></span>
+        </label>
+        <input id="ALECAFRAME_DIR" type="text" spellcheck="false" placeholder="%LOCALAPPDATA%\AlecaFrame">
+        <div class="row-actions"><button data-save="ALECAFRAME_DIR">Enregistrer</button></div>
+      </div>
+      <div class="field">
+        <label>DLL AlecaFrame
+          <span class="help" tabindex="0">?<span class="bubble">
+            Chemin de <b>AlecaFrameClientLib.dll</b>, utilisé pour lire ton inventaire. Trouvé automatiquement dans le
+            dossier des extensions Overwolf ; à renseigner seulement si le diagnostic ne le trouve pas.
+          </span></span>
+        </label>
+        <input id="ALECAFRAME_DLL" type="text" spellcheck="false" placeholder="automatique (Overwolf)">
+        <div class="row-actions"><button data-save="ALECAFRAME_DLL">Enregistrer</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><div class="marker"></div><span class="panel-label">Automatisation</span></div>
+    <div class="panel-body">
+      <label class="check"><input type="checkbox" id="AUTO_DAILY"> Relevé automatique des prix de mes rivens une fois par jour
+        <span class="help" tabindex="0">?<span class="bubble">
+          Au démarrage puis toutes les 6 h, si le dernier relevé date de plus de 20 h, l'app relève le prix de chacun de
+          tes rivens (environ une recherche warframe.market par riven). Les courbes se remplissent toutes seules.
+        </span></span>
+      </label>
+      <label class="check"><input type="checkbox" id="NOTIFY"> Notifications Windows
+        <span class="help" tabindex="0">?<span class="bubble">
+          Après chaque relevé : une notification quand une catégorie de tes rivens passe au <b>vert</b> (bon moment
+          pour vendre), et quand un vendeur en ligne propose un riven comparable <b>moins cher que ton annonce</b>.
+        </span></span>
+      </label>
+      <div class="row-actions"><button id="btnDaily" class="primary">Faire le relevé maintenant</button></div>
+      <div class="hint" id="dailyState" style="margin:0"></div>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+  <div class="hint" id="envFile" style="margin:0"></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const msg = (t, cls = '') => { $('msg').textContent = t; $('msg').className = cls; };
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+function showSettings(s) {
+  for (const k of ['WFM_USERNAME', 'RIVENS_JSON', 'ALECAFRAME_DIR', 'ALECAFRAME_DLL']) $(k).value = s.values[k] || '';
+  $('AUTO_DAILY').checked = !!s.values.AUTO_DAILY;
+  $('NOTIFY').checked = !!s.values.NOTIFY;
+  $('tokenState').textContent = s.hasToken ? 'Token défini ✓ (masqué). Colle un nouveau token pour le remplacer.' : 'Aucun token : vente et retrait en simulation uniquement.';
+  $('token').placeholder = s.hasToken ? '•••••••• (défini)' : 'colle ici la valeur du cookie JWT';
+  $('envFile').textContent = `Réglages enregistrés dans : ${s.envFile}`;
+}
+
+async function save(updates, okText) {
+  const r = await window.settings.set(updates);
+  if (!r.ok) return msg(`Erreur : ${r.error}`, 'err');
+  showSettings(r); msg(okText, 'ok'); runDiag();
+}
+
+async function runDiag() {
+  $('summary').className = ''; $('summary').textContent = 'Vérification…';
+  const list = await window.settings.diagnostics();
+  const box = $('diag'); box.replaceChildren();
+  for (const d of list) {
+    box.append(el('div', `st ${d.level}`, d.level === 'ok' ? '✓' : d.level === 'warn' ? '⚠' : '✗'),
+               el('div', null, d.label), el('div', 'det', d.detail || ''));
+    if (d.level !== 'ok' && d.help) box.append(el('div', 'tip', d.help));
+  }
+  const errors = list.filter(d => d.level === 'error').length, warns = list.filter(d => d.level === 'warn').length;
+  $('summary').className = errors ? 'error' : warns ? 'warn' : 'ok';
+  $('summary').textContent = errors ? `${errors} point(s) bloquant(s) à régler pour que l'app fonctionne.`
+    : warns ? `L'app fonctionne. ${warns} point(s) optionnel(s) à compléter.` : 'Tout est prêt ✓';
+}
+
+async function showDaily() {
+  const s = await window.riven.dailyStatus();
+  $('dailyState').textContent = s.running ? 'Relevé en cours…'
+    : s.lastRun ? `Dernier relevé : ${new Date(s.lastRun).toLocaleString()} (${s.lastCount} riven(s))${s.lastErrors.length ? ` – ${s.lastErrors.length} erreur(s)` : ''}`
+    : 'Aucun relevé effectué pour le moment.';
+}
+
+$('saveToken').onclick = () => {
+  const v = $('token').value.trim();
+  if (!v) return msg('Colle d\'abord le token dans le champ.', 'err');
+  $('token').value = '';                                   // ne reste pas dans la page
+  save({ WFM_JWT: v }, 'Token enregistré.');
+};
+$('clearToken').onclick = () => { $('token').value = ''; save({ WFM_JWT: '' }, 'Token effacé.'); };
+document.querySelectorAll('[data-save]').forEach(b => { b.onclick = () => save({ [b.dataset.save]: $(b.dataset.save).value }, 'Enregistré.'); });
+for (const k of ['AUTO_DAILY', 'NOTIFY']) $(k).onchange = () => save({ [k]: $(k).checked ? '1' : '0' }, 'Enregistré.');
+$('btnDiag').onclick = runDiag;
+$('btnDaily').onclick = async () => {
+  $('btnDaily').disabled = true; $('dailyState').textContent = 'Relevé en cours (≈ 2 s par riven)…';
+  const r = await window.riven.daily();
+  msg(r.text, r.ok ? 'ok' : 'err'); $('btnDaily').disabled = false; showDaily();
+};
+
+(async () => { showSettings(await window.settings.get()); runDiag(); showDaily(); })();
+</script>
+</body>
+</html>

@@ -19,8 +19,15 @@ contextBridge.exposeInMainWorld('riven', {
   history: r             => ipcRenderer.invoke('riven:history', r),
   sell:    args          => ipcRenderer.invoke('riven:sell', args),
   unsell:  args          => ipcRenderer.invoke('riven:unsell', args),
-  ocr:     args          => ipcRenderer.invoke('riven:ocr', args),
   import:  args          => ipcRenderer.invoke('riven:import', args),
   barometer: r           => ipcRenderer.invoke('riven:barometer', r),
-  finder:  args          => ipcRenderer.invoke('riven:finder', args),
+  daily:   ()            => ipcRenderer.invoke('riven:daily'),
+  dailyStatus: ()        => ipcRenderer.invoke('riven:dailyStatus'),
+});
+
+// Page Paramètres : le token est en écriture seule (get() ne renvoie que "défini / non défini").
+contextBridge.exposeInMainWorld('settings', {
+  get:         ()        => ipcRenderer.invoke('settings:get'),
+  set:         updates   => ipcRenderer.invoke('settings:set', updates),
+  diagnostics: ()        => ipcRenderer.invoke('settings:diagnostics'),
 });

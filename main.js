@@ -1,20 +1,23 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Notification } = require("electron");
 const path = require("path");
 const express = require("express");
 const fetch = require("node-fetch");
-const cors = require("cors");
 const { saveMarketData, saveHistoricalPrices, getHistoricalPrices, getMarketData, clearTodayData } = require('./database.js');
 const { registerRivenIpc, barometer } = require('./rivenBackend.js');
+const { createSettings, diagnostics } = require('./settings.js');
 
 let mainWindow = null;
 
 // ============================================
 // Serveur Express embarqué
 // ============================================
+// Écoute uniquement sur 127.0.0.1 (pas sur le réseau local) et sans CORS : seule la fenêtre de l'app,
+// servie par ce même serveur, l'appelle. Si le port 3000 est pris, un port libre est choisi.
 const server = express();
-const PORT = 3000;
+const HOST = "127.0.0.1";
+const PREFERRED_PORT = 3000;
+let PORT = PREFERRED_PORT;
 
-server.use(cors());
 server.use(express.static(path.join(__dirname, "public")));
 
 const WF_HEADERS = {
@@ -83,9 +86,18 @@ server.get("/api/statistics/:slug", async (req, res) => {
   }
 });
 
-server.listen(PORT, () =>
-  console.log(`Express server running at http://localhost:${PORT}`)
-);
+function startServer() {
+  return new Promise((resolve, reject) => {
+    const tryListen = port => {
+      const s = server.listen(port, HOST, () => { PORT = s.address().port; console.log(`Express server running at http://${HOST}:${PORT}`); resolve(PORT); });
+      s.once("error", err => {
+        if (err.code === "EADDRINUSE" && port !== 0) { console.warn(`Port ${port} déjà utilisé : choix d'un port libre.`); tryListen(0); }
+        else reject(err);
+      });
+    };
+    tryListen(PREFERRED_PORT);
+  });
+}
 
 // ============================================
 // Fenêtre Electron
@@ -107,13 +119,21 @@ function createWindow() {
   win.on("closed", () => { if (mainWindow === win) mainWindow = null; });
 
   // Charger l'app depuis le serveur Express local
-  win.loadURL(`http://localhost:${PORT}`);
+  win.loadURL(`http://${HOST}:${PORT}`);
 
   // Ouvrir les DevTools en développement (commenter en prod)
   // win.webContents.openDevTools();
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  app.setAppUserModelId("com.warframe.market-tool");   // nom affiché dans les notifications Windows
+  try {
+    await startServer();
+  } catch (err) {
+    dialog.showErrorBox("Warframe Market Tool", `Impossible de démarrer le serveur local : ${err.message}`);
+    app.quit();
+    return;
+  }
   createWindow();
 
   // Handlers IPC pour la base de données
@@ -139,12 +159,27 @@ app.whenReady().then(() => {
 
   // Page Rivens : handlers riven:*. Le .env / rivens.json sont lus depuis la racine du projet en dev,
   // et depuis userData une fois packagé (__dirname est alors dans app.asar, en lecture seule).
-  registerRivenIpc({
+  const dataDir = app.isPackaged ? app.getPath('userData') : __dirname;
+  const settings = createSettings({ dir: dataDir, app });
+  registerRivenIpc({            // charge aussi le .env (avant toute lecture des réglages)
     ipcMain,
     dialog,
     getWindow: () => mainWindow,
-    dir: app.isPackaged ? app.getPath('userData') : __dirname,
+    dir: dataDir,
+    Notification,
+    settings,
   });
+
+  // Page Paramètres : le token n'est jamais renvoyé (settings.get ne donne que hasToken)
+  ipcMain.handle('settings:get', () => settings.get());
+  ipcMain.handle('settings:set', (event, updates) => {
+    try { return { ok: true, ...settings.set(updates) }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  ipcMain.handle('settings:diagnostics', () => diagnostics({
+    jsonPath: process.env.RIVENS_JSON || path.join(dataDir, 'rivens.json'),
+    Notification,
+  }));
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -9,7 +9,8 @@
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "test": "node --test \"tests/*.test.js\""
   },
   "build": {
     "appId": "com.warframe.market-tool",
@@ -23,6 +24,7 @@
       "database.js",
       "rivenBackend.js",
       "alecaframeImport.js",
+      "settings.js",
       "public/**/*",
       "node_modules/**/*"
     ],

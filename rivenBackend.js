@@ -1,30 +1,23 @@
 'use strict';
 /**
- * rivenBackend.js – côté "main" d'Electron. Fait les appels à warframe.market (pas de CORS ici),
- * lit/écrit rivens.json, garde l'historique des prix, lance l'OCR Python.
- * Le token WFM_JWT reste ICI : la page (renderer) ne le voit jamais.
+ * rivenBackend.js – côté "main" d'Electron. Appels à warframe.market, lecture/écriture de rivens.json,
+ * historique des prix, import AlecaFrame, relevé quotidien + notifications.
+ * Le token WFM_JWT reste ICI : la page (renderer) ne le voit jamais, et il n'est envoyé à warframe.market
+ * que pour les actions qui l'exigent (vendre / retirer).
  *
  * Branché dans main.js (registerRivenIpc). `dir` = racine du projet en dev, userData une fois packagé.
- *
- * .env (dans `dir` ou un dossier au-dessus) :
- *   WFM_JWT=...                        (obligatoire seulement pour Vendre / Retirer en réel)
- *   PYTHON_PATH=C:\Users\...\python.exe  (pour le bouton Scanner)
- *   OCR_SCRIPT=D:\dev\web\warframeMarketTool\ocrRiven\ocrRiven.py
- *   RIVENS_JSON=D:\dev\web\warframeMarketTool\rivens.json   (optionnel)
+ * Réglages (.env, modifiables dans la page Paramètres) : voir settings.js.
  */
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
 const { importFromAlecaFrame } = require('./alecaframeImport');
 
 const BASE = 'https://api.warframe.market/v1';
-// TODO(à vérifier) conversion "x1.47" -> 47 pour damage_vs_*.
-//   Constat 2026-11-25 (GET /v1/auctions/search, lecture seule, ~600 annonces) : l'API RENVOIE ces stats
-//   sous forme de multiplicateur brut (ex. 1.54, 1.07, et 0.77 / 0.96 pour les négatives), pas 54.
-//   La conversion ci-dessous est donc probablement fausse ; non modifiée, à trancher avant le 1er envoi réel.
-const MULTIPLIER_STATS = new Set(['damage_vs_grineer', 'damage_vs_corpus', 'damage_vs_infested']);
-// TODO(à vérifier) liste des polarités. Constat 2026-11-25 (mêmes ~600 annonces) : seules madurai,
-//   vazarin et naramon apparaissent ; zenurik / unairu / penjaga jamais observées. Liste non modifiée.
+// damage_vs_* : envoyés tels quels sous forme de multiplicateur (ex. 1.47, 0.97). Constat 2026-11-25 sur ~600
+// annonces (GET /v1/auctions/search) : c'est le format que warframe.market stocke et renvoie. L'ancienne
+// conversion "1.47 -> 47" du prototype a été retirée.
+// Polarités : sur ces mêmes annonces, seules madurai, vazarin et naramon apparaissent (les rivens n'en ont pas
+// d'autre en jeu). Les autres restent proposées dans la liste au cas où.
 const POLARITIES = ['madurai', 'vazarin', 'naramon', 'zenurik', 'unairu', 'penjaga'];
 
 // ---------- .env sans module ----------
@@ -44,17 +37,13 @@ function loadEnv(dir) {
   return null;
 }
 
-const headers = () => ({
-  // User-Agent obligatoire : sans lui warframe.market répond 403 (même valeur que WF_HEADERS dans main.js)
+// User-Agent obligatoire : sans lui warframe.market répond 403 (même valeur que WF_HEADERS dans main.js).
+// Le token n'est joint QUE si auth = true (vendre / retirer) : les recherches publiques n'en ont pas besoin.
+const headers = (auth = false) => ({
   'User-Agent': 'WarframeMarketTool/1.0',
   Platform: 'pc', Language: 'en', 'Content-Type': 'application/json',
-  Authorization: `JWT ${process.env.WFM_JWT || ''}`,
+  ...(auth ? { Authorization: `JWT ${process.env.WFM_JWT || ''}` } : {}),
 });
-// Environnement des scripts Python : tout process.env SAUF le token (il ne doit exister que dans le main).
-const childEnv = () => {
-  const { WFM_JWT, ...env } = process.env;
-  return { ...env, PYTHONIOENCODING: 'utf-8' };   // accents lisibles dans le journal
-};
 const keyOf = r => `${r.weapon_url_name}|${[...r.pos].sort().join(',')}|${[...r.neg].sort().join(',')}`;
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
@@ -214,7 +203,10 @@ function barometer(rows, { basis = 'volume' } = {}) {
       ` · ${Math.round(now.vol7)} ventes/jour (${volPct}e percentile, ${sign(volTrend)})`
     : `${head} : ${Math.round(now.vol7)} ventes/jour (moy. 7 j), plus que ${volPct} % des 90 derniers jours, ` +
       `${sign(volTrend)} sur 2 semaines · prix médian ${med} pl (${medPct}e percentile, ${sign(medTrend)})`;
-  return { series: days, verdict: { level, text, volNow: Math.round(now.vol7), volPct, volTrend, medNow: now.med7, medPct, medTrend } };
+  // Pendant pour l'achat (objets) : prix dans le bas de ses 90 jours et marché encore actif
+  const buy = basis === 'price' && medPct <= 33 && volPct > 20;
+  return { series: days, verdict: { level, buy, text: text + (buy ? ' · 🛒 bon moment pour ACHETER (prix bas)' : ''),
+                                    volNow: Math.round(now.vol7), volPct, volTrend, medNow: now.med7, medPct, medTrend } };
 }
 
 // ---------- prix de vente conseillé ----------
@@ -282,10 +274,7 @@ function suggestPrice(r, info) {
 }
 
 // ---------- vente / retrait ----------
-const attributePayload = s => ({
-  url_name: s.stat, positive: s.positive,
-  value: MULTIPLIER_STATS.has(s.stat) ? Math.round((s.value - 1) * 1000) / 10 : s.value,
-});
+const attributePayload = s => ({ url_name: s.stat, positive: s.positive, value: s.value });   // damage_vs_* : multiplicateur tel quel
 const sellPayload = (r, price, polarity, note = '') => ({
   item: { type: 'riven', weapon_url_name: r.weapon_url_name, name: r.riven_name,
           mastery_level: r.mastery_level, re_rolls: r.re_rolls, mod_rank: r.mod_rank,
@@ -293,37 +282,129 @@ const sellPayload = (r, price, polarity, note = '') => ({
   note, starting_price: price, buyout_price: price, minimal_reputation: 0, minimal_increment: 1, private: false,
 });
 
-function registerRivenIpc({ ipcMain, dialog, getWindow, dir }) {
+/**
+ * Pur (testable). Décide quelles notifications envoyer après un relevé.
+ *  - catégorie de rivens qui passe au vert (bon moment) alors qu'elle ne l'était pas au relevé précédent
+ *  - annonce à toi (auction_id + listed_price) avec un vendeur EN LIGNE moins cher : une seule fois par prix concurrent
+ * results : [{ riven, info, catType, catLabel, catLevel }] ; state : { levels: {type: level}, undercut: {auctionId: prix} }
+ */
+function planNotifications(results, state) {
+  const notes = [], levels = { ...(state.levels || {}) }, undercut = { ...(state.undercut || {}) };
+  const byCat = new Map();
+  for (const x of results) if (x.catType) {
+    if (!byCat.has(x.catType)) byCat.set(x.catType, { label: x.catLabel, level: x.catLevel, rivens: [] });
+    byCat.get(x.catType).rivens.push(x.riven);
+  }
+  for (const [type, c] of byCat) {
+    if (c.level === 'bon' && levels[type] !== 'bon') {
+      const names = c.rivens.filter(r => !r.auction_id).map(r => r.weapon);
+      if (names.length) notes.push({ title: `Bon moment pour vendre : ${c.label}`,
+        body: `La demande est haute. Rivens concernés : ${[...new Set(names)].slice(0, 6).join(', ')}${names.length > 6 ? '…' : ''}` });
+    }
+    if (c.level && c.level !== 'inconnu') levels[type] = c.level;
+  }
+  for (const { riven: r, info } of results) {
+    if (!r.auction_id || !r.listed_price || !info || !info.prices || !info.prices.length) continue;
+    const cheapest = info.prices[0];                                   // vendeurs en ligne, ta propre annonce exclue
+    if (cheapest < r.listed_price && undercut[r.auction_id] !== cheapest) {
+      notes.push({ title: `${r.weapon} : quelqu'un vend moins cher`,
+        body: `Un vendeur en ligne propose ${cheapest} pl, ton annonce est à ${r.listed_price} pl.` });
+      undercut[r.auction_id] = cheapest;
+    }
+  }
+  return { notes, state: { ...state, levels, undercut } };
+}
+
+function registerRivenIpc({ ipcMain, dialog, getWindow, dir, Notification, settings }) {
   loadEnv(dir);
   const jsonPath = () => process.env.RIVENS_JSON || path.join(dir, 'rivens.json');
   const histPath = () => path.join(path.dirname(jsonPath()), 'price_history.json');
+  const statePath = () => path.join(path.dirname(jsonPath()), 'notif_state.json');
   const readHist = () => { try { return JSON.parse(fs.readFileSync(histPath(), 'utf8')); } catch { return []; } };
+  const readJson = (p, def) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return def; } };
+  const flag = k => (settings ? settings.flag(k) : true);
+
+  // Prix d'un riven + point d'historique (partagé par le bouton, la courbe et le relevé quotidien)
+  async function priceAndRecord(r) {
+    const info = await marketPrice(r);
+    try { info.de = deFor(await deWeeklyStats(), r); } catch { info.de = null; }   // repli facultatif
+    const suggested = suggestPrice(r, info);
+    const hist = readHist(), key = keyOf(r), now = new Date();
+    const point = { date: now.toISOString(), key, n: info.n, min: info.min, median: info.median,
+                    suggested: suggested ? suggested.price : null, de: info.de ? info.de.median : null };
+    // < 30 min après le précédent point de ce riven (mêmes données, cache) : on le remplace au lieu d'empiler
+    let last = -1; for (let k = hist.length - 1; k >= 0; k--) if (hist[k].key === key) { last = k; break; }
+    if (last >= 0 && now - new Date(hist[last].date) < WFM_CACHE_MS) hist[last] = point; else hist.push(point);
+    fs.writeFileSync(histPath(), JSON.stringify(hist));
+    return { ...info, suggested };
+  }
+
+  function notify(title, body) {
+    if (!Notification || !flag('NOTIFY') || !Notification.isSupported()) return;
+    const n = new Notification({ title, body });
+    n.on('click', () => { const w = getWindow(); if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); } });
+    n.show();
+  }
+
+  // Relevé quotidien : prix de chaque riven (historique), baromètre des catégories, notifications.
+  // N'écrit PAS rivens.json (la page peut le modifier en même temps) : seulement l'historique et notif_state.json.
+  let dailyRunning = false;
+  async function runDailyCheck({ force = false } = {}) {
+    if (dailyRunning) return { ok: false, text: 'Relevé déjà en cours.' };
+    const state = readJson(statePath(), {});
+    if (!force && state.lastRun && Date.now() - new Date(state.lastRun) < 20 * 3600 * 1000)
+      return { ok: true, skipped: true, text: `Dernier relevé : ${new Date(state.lastRun).toLocaleString()} (moins de 20 h).` };
+    const rivens = readJson(jsonPath(), null);
+    if (!Array.isArray(rivens) || !rivens.length) return { ok: false, text: 'Aucun riven : importe d\'abord depuis AlecaFrame.' };
+    dailyRunning = true;
+    const results = [], errors = [];
+    try {
+      const cats = new Map();
+      for (const r of rivens) {
+        if (!r.weapon_url_name || !Array.isArray(r.pos)) continue;
+        let info = null;
+        try { info = await priceAndRecord(r); }
+        catch (e) { errors.push(`${r.weapon} : ${e.message}`); if (/429/.test(e.message)) break; continue; }
+        let type = null;
+        try { type = await rivenTypeOf(r); } catch { /* catégorie inconnue */ }
+        if (type && !cats.has(type)) {
+          try { cats.set(type, barometer(await categoryStats(type)).verdict.level); } catch { cats.set(type, 'inconnu'); }
+        }
+        results.push({ riven: r, info, catType: type, catLabel: `rivens de ${CATEGORY_LABEL[type] || type}`, catLevel: type ? cats.get(type) : null });
+      }
+      const plan = planNotifications(results, state);
+      for (const n of plan.notes) notify(n.title, n.body);
+      fs.writeFileSync(statePath(), JSON.stringify({ ...plan.state, lastRun: new Date().toISOString(),
+                                                    lastCount: results.length, lastErrors: errors }, null, 2));
+      return { ok: true, text: `Relevé terminé : ${results.length}/${rivens.length} rivens, ${plan.notes.length} notification(s)` +
+                                (errors.length ? `\n${errors.join('\n')}` : '') };
+    } finally { dailyRunning = false; }
+  }
+  // Au démarrage (après 1 min) puis toutes les 6 h : relevé si le dernier a plus de 20 h et si l'option est active
+  const tick = () => { if (flag('AUTO_DAILY')) runDailyCheck().catch(e => console.error('Relevé quotidien :', e.message)); };
+  setTimeout(tick, 60 * 1000).unref?.();
+  setInterval(tick, 6 * 3600 * 1000).unref?.();
+  ipcMain.handle('riven:daily', () => runDailyCheck({ force: true }));
+  ipcMain.handle('riven:dailyStatus', () => {
+    const s = readJson(statePath(), {});
+    return { lastRun: s.lastRun || null, lastCount: s.lastCount || 0, lastErrors: s.lastErrors || [], running: dailyRunning };
+  });
   const confirm = async (win, title, detail) =>
     (await dialog.showMessageBox(win, { type: 'warning', buttons: ['Annuler', 'Confirmer'], defaultId: 0, cancelId: 0,
                                          title, message: title, detail })).response === 1;
 
-  ipcMain.handle('riven:config', () => ({ polarities: POLARITIES, rivensJson: jsonPath(),
-                                           hasToken: !!process.env.WFM_JWT, hasOcr: !!process.env.OCR_SCRIPT }));
+  ipcMain.handle('riven:config', () => ({ polarities: POLARITIES, rivensJson: jsonPath(), hasToken: !!process.env.WFM_JWT }));
   ipcMain.handle('riven:load', () => {
+    // Premier lancement : pas encore de fichier -> liste vide et consigne claire (pas d'erreur technique)
+    if (!fs.existsSync(jsonPath())) return { ok: true, rivens: [], firstRun: true };
     try { return { ok: true, rivens: JSON.parse(fs.readFileSync(jsonPath(), 'utf8')) }; }
     catch (e) { return { ok: false, error: `Impossible de lire ${jsonPath()} : ${e.message}` }; }
   });
   ipcMain.handle('riven:save', (_e, rivens) => { fs.writeFileSync(jsonPath(), JSON.stringify(rivens, null, 2)); return true; });
 
   ipcMain.handle('riven:price', async (_e, r) => {
-    try {
-      const info = await marketPrice(r);
-      try { info.de = deFor(await deWeeklyStats(), r); } catch { info.de = null; }   // repli facultatif
-      const suggested = suggestPrice(r, info);
-      const hist = readHist(), key = keyOf(r), now = new Date();
-      const point = { date: now.toISOString(), key, n: info.n, min: info.min, median: info.median,
-                      suggested: suggested ? suggested.price : null, de: info.de ? info.de.median : null };
-      // < 30 min après le précédent point de ce riven (mêmes données, cache) : on le remplace au lieu d'empiler
-      let last = -1; for (let k = hist.length - 1; k >= 0; k--) if (hist[k].key === key) { last = k; break; }
-      if (last >= 0 && now - new Date(hist[last].date) < WFM_CACHE_MS) hist[last] = point; else hist.push(point);
-      fs.writeFileSync(histPath(), JSON.stringify(hist));
-      return { ok: true, ...info, suggested };
-    } catch (e) { return { ok: false, error: e.message }; }
+    try { return { ok: true, ...(await priceAndRecord(r)) }; }
+    catch (e) { return { ok: false, error: e.message }; }
   });
   // Baromètre de la catégorie de l'arme (90 jours) : courbe du marché + verdict "bon moment ?"
   ipcMain.handle('riven:barometer', async (_e, r) => {
@@ -342,17 +423,19 @@ function registerRivenIpc({ ipcMain, dialog, getWindow, dir }) {
     const body = sellPayload(riven, price, polarity);
     // Import AlecaFrame : une stat récente peut avoir une valeur inconnue (cache AlecaFrame), le nom peut manquer
     const missing = [...riven.stats.filter(s => s.value == null).map(s => `valeur de ${s.stat}`), ...(riven.riven_name ? [] : ['nom du riven'])];
+    // Déjà en vente : une 2e annonce du même riven serait un doublon
+    if (riven.auction_id) return { ok: false, text: `Déjà en vente (annonce ${riven.auction_id}${riven.listed_price ? `, ${riven.listed_price} pl` : ''}) : retire-la d'abord pour la remplacer.` };
     const warn = missing.length ? `\n⚠ Inconnu : ${missing.join(', ')} – envoi réel bloqué.` : '';
     if (!live) return { ok: true, text: 'SIMULATION – rien envoyé :\n' + JSON.stringify(body, null, 2) + warn };
     if (missing.length) return { ok: false, text: `Envoi bloqué : ${missing.join(', ')} inconnu(e)(s).` };
-    if (!process.env.WFM_JWT) return { ok: false, text: 'WFM_JWT absent du .env.' };
+    if (!process.env.WFM_JWT) return { ok: false, text: 'Token warframe.market absent : renseigne-le dans Paramètres.' };
     const detail = `${riven.weapon} (${riven.riven_name})\nPrix : ${price} pl\nPolarité : ${polarity}\n` +
       riven.stats.map(s => `${s.positive ? '+' : '−'} ${s.stat} ${s.value}`).join('\n');
     if (!(await confirm(getWindow(), 'Publier cette annonce sur warframe.market ?', detail)))
       return { ok: false, text: 'Annulé.' };
-    // TODO(à vérifier) URL de création POST /v1/auctions/create : venue de mémoire, NON vérifiée
-    //   (aucune doc/lib lue ne la confirme ; impossible à tester sans publier). Format de réponse aussi à vérifier.
-    const res = await fetch(`${BASE}/auctions/create`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+    // Route /v1/auctions/create confirmée (liste des routes autorisées dans la DLL d'AlecaFrame, 2026-11-26).
+    // TODO(à vérifier au 1er envoi réel) : méthode POST et format de la réponse (payload.auction.id).
+    const res = await fetch(`${BASE}/auctions/create`, { method: 'POST', headers: headers(true), body: JSON.stringify(body) });
     const text = await res.text();
     let id = null; try { id = JSON.parse(text).payload.auction.id; } catch { /* format à vérifier */ }
     return { ok: res.ok, auctionId: id, text: `HTTP ${res.status}\n${text.slice(0, 800)}` };
@@ -361,11 +444,11 @@ function registerRivenIpc({ ipcMain, dialog, getWindow, dir }) {
   ipcMain.handle('riven:unsell', async (_e, { riven, live }) => {
     if (!riven.auction_id) return { ok: false, text: "Pas d'auction_id (vends d'abord ce riven depuis l'outil)." };
     if (!live) return { ok: true, text: `SIMULATION – fermerait l'annonce ${riven.auction_id}` };
-    if (!process.env.WFM_JWT) return { ok: false, text: 'WFM_JWT absent du .env.' };
+    if (!process.env.WFM_JWT) return { ok: false, text: 'Token warframe.market absent : renseigne-le dans Paramètres.' };
     if (!(await confirm(getWindow(), "Retirer l'annonce ?", `${riven.weapon} (${riven.riven_name})\nannonce ${riven.auction_id}`)))
       return { ok: false, text: 'Annulé.' };
-    // TODO(à vérifier) URL de fermeture PUT /v1/auctions/entry/{id}/close : venue de mémoire, NON vérifiée.
-    const res = await fetch(`${BASE}/auctions/entry/${encodeURIComponent(riven.auction_id)}/close`, { method: 'PUT', headers: headers() });
+    // Route /v1/auctions/entry/{id}/close confirmée (DLL d'AlecaFrame). TODO(à vérifier au 1er essai) : méthode PUT.
+    const res = await fetch(`${BASE}/auctions/entry/${encodeURIComponent(riven.auction_id)}/close`, { method: 'PUT', headers: headers(true) });
     return { ok: res.ok, text: `HTTP ${res.status}\n${(await res.text()).slice(0, 800)}` };
   });
 
@@ -391,56 +474,7 @@ function registerRivenIpc({ ipcMain, dialog, getWindow, dir }) {
       return { ok: true, text: lines.join('\n') };
     } catch (e) { return { ok: false, text: `Import impossible : ${e.message}` }; }
   });
-
-  // OCR (ancienne méthode, gardée en secours, plus de bouton dans la page) : minimise la fenêtre puis lance le script Python
-  ipcMain.handle('riven:ocr', async (_e, { delaySec = 4, includeListed = false, prune = false }) => {
-    const script = process.env.OCR_SCRIPT;
-    if (!script || !fs.existsSync(script)) return { ok: false, text: 'OCR_SCRIPT absent ou introuvable dans le .env.' };
-    const win = getWindow();
-    const args = [script, '--grab', '--out', jsonPath()].concat(includeListed ? ['--include-listed'] : [], prune ? ['--prune'] : []);
-    win && win.minimize();
-    await sleep(delaySec * 1000);
-    return await new Promise(resolve => {
-      execFile(process.env.PYTHON_PATH || 'python', args, { cwd: path.dirname(script), timeout: 120000, env: childEnv() },
-        (err, stdout, stderr) => {
-          win && win.restore();
-          resolve({ ok: !err, text: (stdout || '') + (stderr || '') +   // err.message répète stderr : code / délai seulement
-            (err ? `\n[OCR arrêté : ${err.killed ? 'délai dépassé' : `code ${err.code}`}]` : '') });
-        });
-    });
-  });
-
-  // finderBot.py : pilote le "Riven finder" d'AlecaFrame (souris + clavier + OCR) et ajoute le champ "finder"
-  // dans rivens.json (+ finder_history.json à côté). Ne contacte pas warframe.market. Il prend la main sur
-  // la souris : la fenêtre est réduite pendant l'exécution. Arrêt d'urgence = souris dans un coin de l'écran.
-  const finderScript = () => process.env.FINDER_SCRIPT ||
-    (process.env.OCR_SCRIPT ? path.join(path.dirname(process.env.OCR_SCRIPT), 'finderBot.py') : '');
-  let finderRunning = false;
-  ipcMain.handle('riven:finder', async (_e, { startSec = 4 } = {}) => {
-    const script = finderScript();
-    if (!script || !fs.existsSync(script))
-      return { ok: false, skipped: true, text: 'finderBot.py introuvable (FINDER_SCRIPT, ou OCR_SCRIPT dans le même dossier, dans le .env).' };
-    if (finderRunning) return { ok: false, text: 'finderBot est déjà en cours.' };
-    let count = 1;
-    try { count = Math.max(1, JSON.parse(fs.readFileSync(jsonPath(), 'utf8')).length); } catch { /* le script signalera l'erreur */ }
-    const start = Math.min(30, Math.max(1, Number(startSec) || 4));
-    finderRunning = true;
-    const win = getWindow();
-    win && win.minimize();
-    try {
-      return await new Promise(resolve => {
-        execFile(process.env.PYTHON_PATH || 'python', [script, jsonPath(), '--start', String(start)],
-          { cwd: path.dirname(script), env: childEnv(), windowsHide: true, maxBuffer: 10 * 1024 * 1024,
-            timeout: (start + 60 + 120 * count) * 1000 },          // ~2 min max par riven
-          (err, stdout, stderr) =>   // err.message répète déjà stderr : on n'en garde que le code / délai
-            resolve({ ok: !err, text: (stdout || '') + (stderr || '') +
-              (err ? `\n[finderBot arrêté : ${err.killed ? 'délai dépassé' : `code ${err.code}`}]` : '') }));
-      });
-    } finally {
-      finderRunning = false;
-      win && !win.isDestroyed() && win.restore();
-    }
-  });
 }
 
-module.exports = { registerRivenIpc, marketPrice, suggestPrice, parseLoose, deWeeklyStats, deFor, barometer, categoryStats, rivenTypeOf, sellPayload, attributePayload, keyOf, loadEnv };
+module.exports = { registerRivenIpc, marketPrice, suggestPrice, planNotifications, parseLoose, deWeeklyStats, deFor,
+                   barometer, categoryStats, rivenTypeOf, sellPayload, attributePayload, keyOf, loadEnv };

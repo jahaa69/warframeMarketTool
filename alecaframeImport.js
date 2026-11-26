@@ -207,13 +207,16 @@ function mergeRivens(existing, converted, auctions, { includeListed = false, pru
       for (const k of GAME_FIELDS) if (!(k === 'polarity' && !c.polarity)) out[i][k] = c[k]; // garde une polarité choisie à la main si le jeu n'en donne pas
       if (auctions) {                                                 // statut "listed" connu
         out[i].listed = listed;
-        if (auction) out[i].auction_id = auction.id;
-        else if (out[i].auction_id) { log.push(`${c.weapon} : plus d'annonce active, auction_id retiré`); delete out[i].auction_id; }
+        if (auction) { out[i].auction_id = auction.id; out[i].listed_price = auction.buyout_price ?? null; }
+        else {
+          if (out[i].auction_id) log.push(`${c.weapon} : plus d'annonce active, auction_id retiré`);
+          delete out[i].auction_id; delete out[i].listed_price;
+        }
       }
       used.add(i); updated++;
     } else {
       if (listed && !includeListed) { skippedListed++; continue; }
-      out.push({ ...c, listed, ...(auction ? { auction_id: auction.id } : {}) });
+      out.push({ ...c, listed, ...(auction ? { auction_id: auction.id, listed_price: auction.buyout_price ?? null } : {}) });
       used.add(out.length - 1); added++;
     }
   }

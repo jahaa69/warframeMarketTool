@@ -5,7 +5,7 @@
   <title>Warframe Market Tool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --gold: #c8a84b;
@@ -428,6 +428,7 @@
     .moment.attendre { color: var(--accent-red); }
     .moment.attendre .dot { background: var(--accent-red); }
     .moment.inconnu, .moment.loading { color: var(--text-dim); }
+    .buy-tag { margin-left: 4px; padding: 1px 6px; font-size: 10px; color: var(--accent-blue); border: 1px solid rgba(58, 143, 200, 0.5); }
     .moment.loading .dot { animation: momentPulse 1s ease-in-out infinite; }
     @keyframes momentPulse { 50% { opacity: 0.3; } }
 
@@ -445,6 +446,7 @@
   <div class="logo-mark"></div>
   <h1>Warframe <span>Market Tool</span></h1>
   <div class="header-right">v2.0 // LOCAL</div>
+  <a class="btn" href="settings.html" title="Paramètres et diagnostic" style="text-decoration:none">⚙ Paramètres</a>
 </header>
 
 <main class="main">
@@ -520,6 +522,7 @@
     const b = el('span', `moment ${v ? v.level : 'loading'}`);
     b.dataset.item = slug;
     b.append(el('span', 'dot'), el('span', 'moment-label', v ? LEVEL_LABEL[v.level] : '…'));
+    if (v && v.buy) b.append(el('span', 'buy-tag', '🛒 achat'));
     b.title = v ? v.text : 'Analyse des 90 derniers jours sur warframe.market…';
     return b;
   }
