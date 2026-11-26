@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<!-- CSP : seules les polices Google Fonts (même police que index.html) sont ajoutées ; scripts inchangés. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'">
+<title>Rivens – warframe.market</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* Mêmes variables que public/index.html (copiées : index.html n'a pas de feuille CSS partagée). */
+  :root{
+    --gold:#c8a84b;--gold-dim:#8a6f2e;--gold-glow:rgba(200,168,75,.15);
+    --bg-void:#080a0c;--bg-panel:#0d1117;--bg-card:#111820;--bg-row:#0f151d;
+    --border:rgba(200,168,75,.2);--border-bright:rgba(200,168,75,.5);
+    --text-primary:#e8dfc8;--text-muted:#7a8a9a;--text-dim:#3a4a5a;
+    --accent-blue:#3a8fc8;--accent-red:#c84a3a;--success:#4ac88a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:500 15px 'Rajdhani',sans-serif;background:var(--bg-void);color:var(--text-primary)}
+  .header{display:flex;align-items:center;gap:16px;padding:22px 32px 18px;border-bottom:1px solid var(--border);position:relative}
+  .header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+  .logo-mark{width:32px;height:32px;border:1.5px solid var(--gold);transform:rotate(45deg);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .logo-mark::after{content:'';width:14px;height:14px;background:var(--gold)}
+  h1{font-size:20px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin:0}
+  h1 span{color:var(--text-muted);font-weight:400}
+  .header-right{margin-left:auto}
+  .main{padding:24px 32px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding:12px 14px;background:var(--bg-panel);border:1px solid var(--border)}
+  label{color:var(--text-muted);font-weight:600}
+  input,select{background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);padding:5px 8px;font:inherit}
+  input:focus,select:focus{outline:none;border-color:var(--gold)}
+  button,a.btn{font:600 13px 'Rajdhani',sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:6px 16px;cursor:pointer;
+    border:1px solid var(--border);background:transparent;color:var(--text-primary);text-decoration:none;display:inline-block;
+    transition:all .12s ease;clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%)}
+  button:hover:not(:disabled),a.btn:hover{border-color:var(--gold);color:var(--gold);background:var(--gold-glow)}
+  button.primary{border-color:rgba(200,168,75,.35);color:var(--gold)}
+  button:disabled{opacity:.4;cursor:default}
+  button.danger{border-color:rgba(200,74,58,.35);color:var(--accent-red)}
+  button.danger:hover:not(:disabled){border-color:var(--accent-red);color:var(--accent-red);background:rgba(200,74,58,.1)}
+  table{width:100%;border-collapse:collapse;background:var(--bg-panel);border:1px solid var(--border)}
+  th,td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+  tbody tr:nth-child(even){background:var(--bg-row)}
+  th{color:var(--text-muted);font-weight:600;font-size:11px;letter-spacing:.2em;text-transform:uppercase}
+  td.stats{font-size:13px;color:var(--text-muted);max-width:340px}
+  .pos{color:var(--success)} .neg{color:var(--accent-red)} input.price{width:70px}
+  #chartSub{font:12px 'Share Tech Mono',monospace;color:var(--text-muted);margin-bottom:6px;max-width:780px}
+  .verdict{font-weight:600;padding:6px 10px;margin-bottom:8px;border-left:3px solid;max-width:780px}
+  .verdict.bon{color:var(--success);border-color:var(--success);background:rgba(74,200,138,.08)}
+  .verdict.moyen{color:var(--gold);border-color:var(--gold);background:var(--gold-glow)}
+  .verdict.attendre{color:var(--accent-red);border-color:var(--accent-red);background:rgba(200,74,58,.08)}
+  .verdict.inconnu{color:var(--text-muted);border-color:var(--text-dim)}
+  .advice{font:11px 'Share Tech Mono',monospace;margin-top:3px;color:var(--text-muted);cursor:help}
+  .advice.haute{color:var(--success)} .advice.moyenne{color:var(--gold)} .advice.faible{color:var(--accent-red)}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.08em;padding:2px 6px;background:var(--success);color:#06210f}
+  .live{display:flex;gap:6px;align-items:center;padding:4px 10px;border:1px solid var(--accent-red)}
+  .live label{color:var(--accent-red)}
+  #log{margin-top:12px;background:var(--bg-card);border:1px solid var(--border);padding:10px;max-height:220px;overflow:auto;white-space:pre-wrap;font:12px 'Share Tech Mono',monospace;color:var(--text-muted)}
+  #msg{color:var(--text-muted);margin:6px 0;font-family:'Share Tech Mono',monospace;font-size:12px}
+  dialog{background:var(--bg-panel);color:var(--text-primary);border:1px solid var(--border-bright)}
+  dialog::backdrop{background:#000a} canvas{display:block;background:var(--bg-card)}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="logo-mark"></div>
+  <h1>Rivens <span>// warframe.market</span></h1>
+  <div class="header-right"><a class="btn" href="index.html">← Marché</a></div>
+</header>
+<main class="main">
+
+<div class="bar">
+  <button id="btnImport" title="Lit ton inventaire directement dans AlecaFrame (lastData.dat) : arme, stats, MR, rolls, polarité, et tes annonces warframe.market">Importer depuis AlecaFrame</button>
+  <label title="Ajoute aussi les nouveaux rivens déjà en vente sur warframe.market"><input id="inclListed" type="checkbox"> inclure déjà listés</label>
+  <label title="Retire de rivens.json les rivens qui ne sont plus dans ton inventaire (vendus, fusionnés). Sauvegarde : rivens.json.bak"><input id="prune" type="checkbox" checked> retirer les absents</label>
+  <button id="btnReload">Recharger</button>
+  <button id="btnPrices" class="primary">Calculer les prix</button>
+  <span class="live"><label><input id="live" type="checkbox"> Envoyer pour de vrai</label></span>
+</div>
+<div id="msg"></div>
+
+<table>
+  <thead><tr><th>Arme</th><th>Stats</th><th>MR / rolls</th><th>Annonces</th><th>Min</th><th>Médiane</th><th>Prix conseillé</th><th>Polarité</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div id="log"></div>
+
+<dialog id="chart"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:16px"><b id="chartTitle"></b>
+  <button id="chartClose">Fermer</button></div>
+  <div id="chartSub"></div><div id="verdict" class="verdict inconnu"></div>
+  <canvas id="cv" width="780" height="450"></canvas></dialog>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let rivens = [], cfg = { polarities: [] };
+
+const log = t => { $('log').textContent = t + '\n\n' + $('log').textContent; };
+const msg = t => { $('msg').textContent = t; };
+const label = r => r.stats.map(s => ({ pos: s.positive, t: `${s.positive ? '+' : '−'}${s.stat.replace(/_/g, ' ')} ${s.value ?? '?'}` }));
+const persist = () => window.riven.save(rivens);
+
+function mk(tag, props = {}, ...kids) {              // construit le DOM avec textContent (jamais innerHTML avec des données)
+  const el = Object.assign(document.createElement(tag), props);
+  kids.forEach(k => el.append(k)); return el;
+}
+
+function render() {
+  const tb = $('rows'); tb.replaceChildren();
+  rivens.forEach((r, i) => {
+    const stats = mk('td', { className: 'stats' });
+    label(r).forEach((s, j) => { if (j) stats.append(' · '); stats.append(mk('span', { className: s.pos ? 'pos' : 'neg', textContent: s.t })); });
+    const price = mk('input', { className: 'price', type: 'number', min: 1, value: r.price ?? '' });
+    price.oninput = () => { r.price = price.value ? Number(price.value) : null; persist(); };
+    const priceCell = mk('td', {}, price);
+    if (r.suggested) {                                    // conseil : confiance visible, détail du calcul en infobulle
+      price.title = r.suggested.reason;
+      priceCell.append(mk('div', { className: `advice ${r.suggested.confidence}`, title: r.suggested.reason,
+        textContent: `conseillé ${r.suggested.price} · ${r.suggested.confidence}` }));
+    }
+    const pol = mk('select', {}, mk('option', { value: '', textContent: '—' }),
+      ...cfg.polarities.map(p => mk('option', { value: p, textContent: p })));
+    pol.value = r.polarity || ''; pol.onchange = () => { r.polarity = pol.value; persist(); };
+    const sell = mk('button', { textContent: 'Vendre', className: 'primary' }); sell.onclick = () => doSell(i);
+    const unsell = mk('button', { textContent: 'Retirer', className: 'danger' }); unsell.onclick = () => doUnsell(i);
+    const graph = mk('button', { textContent: 'Courbe' }); graph.onclick = () => showChart(i);
+    const tr = mk('tr', {},
+      mk('td', { textContent: r.weapon }), stats,
+      mk('td', { textContent: `${r.mastery_level ?? '?'} / ${r.re_rolls ?? '?'}` }),
+      mk('td', { textContent: r.n ?? '' }), mk('td', { textContent: r.min ?? '' }), mk('td', { textContent: r.median ?? '' }),
+      priceCell, mk('td', {}, pol),
+      mk('td', {}, r.auction_id ? mk('span', { className: 'badge', textContent: 'EN VENTE ' }) : '', sell, ' ', unsell, ' ', graph));
+    tb.append(tr);
+  });
+  msg(`${rivens.length} riven(s) — ${cfg.hasToken ? 'token trouvé' : 'pas de token (simulation seulement)'}`);
+}
+
+async function reload() {
+  const res = await window.riven.load();
+  if (!res.ok) { rivens = []; render(); return msg(res.error); }
+  rivens = res.rivens; render();
+}
+
+async function doSell(i) {
+  const r = rivens[i], price = Number(r.price);
+  if (!price || price < 1) return msg('Prix invalide.');
+  if (!r.polarity) return msg("Choisis la polarité (l'OCR ne la lit pas).");
+  const out = await window.riven.sell({ riven: r, price, polarity: r.polarity, live: $('live').checked });
+  if (out.ok && out.auctionId) { r.auction_id = out.auctionId; await persist(); render(); }
+  log(`[Vendre] ${r.weapon}\n${out.text}`);
+}
+
+async function doUnsell(i) {
+  const r = rivens[i];
+  const out = await window.riven.unsell({ riven: r, live: $('live').checked });
+  if (out.ok && $('live').checked) { delete r.auction_id; await persist(); render(); }
+  log(`[Retirer] ${r.weapon}\n${out.text}`);
+}
+
+$('btnPrices').onclick = async () => {
+  $('btnPrices').disabled = true;
+  await reload();      // repart du fichier à jour (ex. juste après un import)
+  // Prix sans OCR ni souris : annonces warframe.market + statistiques d'échanges publiées par DE (rivenBackend.js)
+  for (let i = 0; i < rivens.length; i++) {
+    msg(`Prix ${i + 1}/${rivens.length} : ${rivens[i].weapon}… (≈ 2 s par riven)`);
+    const p = await window.riven.price(rivens[i]);
+    if (!p.ok) {                                   // une arme en erreur n'arrête pas les autres, sauf limite atteinte
+      log(`[Prix] ${rivens[i].weapon} : ${p.error}`);
+      if (/429/.test(p.error)) { msg(p.error); break; }
+      continue;
+    }
+    // Prix = prix de vente conseillé (calcul dans rivenBackend.js : suggestPrice) ; à défaut, médiane comme avant
+    const s = p.suggested;
+    Object.assign(rivens[i], { n: p.n, min: p.min, median: p.median, suggested: s, price: s ? s.price : p.median });
+    log(`[Conseil] ${rivens[i].weapon} : ${s ? `${s.price} pl (confiance ${s.confidence}) – ${s.reason}` : 'aucune donnée, prix à fixer à la main'}`);
+    render();                                      // l'espacement des requêtes est géré côté main
+  }
+  await persist(); $('btnPrices').disabled = false; msg('Prix à jour.');
+};
+
+$('btnImport').onclick = async () => {
+  $('btnImport').disabled = true; msg('Import depuis AlecaFrame… (quelques secondes la première fois)');
+  const out = await window.riven.import({ includeListed: $('inclListed').checked, prune: $('prune').checked });
+  log(`[Import AlecaFrame]\n${out.text}`); await reload(); if (!out.ok) msg(out.text); $('btnImport').disabled = false;
+};
+$('btnReload').onclick = reload;
+
+// "Courbe" = est-ce le bon moment pour vendre ? Deux panneaux sur les 90 mêmes jours, sans librairie :
+//  haut : marché de la catégorie de l'arme (warframe.market : ventes conclues de rivens voilés, 90 j) + verdict
+//  bas  : TON riven (price_history.json : médiane marché, moins cher, médiane DE de l'arme, prix conseillé)
+const SERIES = [   // clé du point d'historique, libellé, couleur, pointillés
+  { k: 'median',    label: 'médiane marché',  col: '#c8a84b', dash: [] },
+  { k: 'min',       label: 'moins cher',      col: '#7a8a9a', dash: [5, 4] },
+  { k: 'de',        label: 'médiane DE (arme)', col: '#3a8fc8', dash: [2, 3] },
+  { k: 'suggested', label: 'prix conseillé',  col: '#4ac88a', dash: [], ring: true },   // anneau, dessiné en dernier : reste visible
+];
+const DAY = 86400000;
+function drawChart(r, h, baro, status) {
+  $('chartTitle').textContent = `${r.weapon} – bon moment pour vendre ?${status ? ` (${status})` : ''}`;
+  const cv = $('cv'), g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+  g.font = '12px "Share Tech Mono", monospace';
+  const padL = 52, padR = 52, W = cv.width - padL - padR;
+  const t1 = Date.now(), t0 = t1 - 90 * DAY, X = t => padL + (t - t0) / (t1 - t0) * W;
+  const legend = (items, y) => { let x = padL; for (const [label, col] of items) { g.fillStyle = col; g.fillRect(x, y - 4, 14, 3); g.fillText(label, x + 18, y); x += 30 + g.measureText(label).width; } };
+  const grid = (top, bot, max, side, fmt) => {
+    g.strokeStyle = 'rgba(200,168,75,0.15)'; g.fillStyle = '#7a8a9a';
+    for (let k = 0; k <= 3; k++) {
+      const y = bot - (bot - top) * k / 3, v = fmt(max * k / 3);
+      if (side === 'L') { g.beginPath(); g.moveTo(padL, y); g.lineTo(padL + W, y); g.stroke(); g.fillText(v, 4, y + 4); }
+      else g.fillText(v, padL + W + 6, y + 4);
+    }
+  };
+
+  // --- panneau du haut : marché de la catégorie ---
+  const T = { top: 30, bot: 210 };
+  g.fillStyle = '#7a8a9a';
+  if (!baro) g.fillText('Chargement du marché…', padL, 110);
+  else if (!baro.ok) g.fillText(`Marché indisponible : ${baro.error}`, padL, 110);
+  else {
+    const s = baro.series.map(d => ({ ...d, t: new Date(d.date + 'T12:00:00Z').getTime() })).filter(d => d.t >= t0);
+    const vMax = Math.max(1, ...s.map(d => d.vol)) * 1.1, pMax = Math.max(1, ...s.map(d => d.med7 || 0)) * 1.25;
+    const Yv = v => T.bot - v / vMax * (T.bot - T.top), Yp = v => T.bot - v / pMax * (T.bot - T.top);
+    grid(T.top, T.bot, vMax, 'L', v => Math.round(v)); grid(T.top, T.bot, pMax, 'R', v => v.toFixed(1) + ' pl');
+    const bw = Math.max(1, W / 90 - 1);
+    g.fillStyle = 'rgba(200,168,75,0.22)'; for (const d of s) g.fillRect(X(d.t) - bw / 2, Yv(d.vol), bw, T.bot - Yv(d.vol));
+    const line = (key, Y, col) => { g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); let pen = false;
+      for (const d of s) { const v = d[key]; if (v == null) { pen = false; continue; } pen ? g.lineTo(X(d.t), Y(v)) : g.moveTo(X(d.t), Y(v)); pen = true; }
+      g.stroke(); g.lineWidth = 1; };
+    line('vol7', Yv, '#c8a84b'); line('med7', Yp, '#b88cf0');
+    legend([[`ventes/jour (${baro.label}, moy. 7 j)`, '#c8a84b'], ['prix médian riven voilé (axe droit)', '#b88cf0']], 16);
+  }
+
+  // --- panneau du bas : ton riven ---
+  const B = { top: 262, bot: 420 };
+  const num = v => (typeof v === 'number' && v > 0 ? v : null);
+  const pts = h.map(p => ({ ...p, t: new Date(p.date).getTime() })).filter(p => p.t >= t0);
+  const vals = pts.flatMap(p => SERIES.map(s => num(p[s.k]))).filter(v => v != null);
+  g.fillStyle = '#7a8a9a';
+  if (!vals.length) g.fillText('Pas encore de relevé de prix pour ce riven sur 90 jours.', padL, 340);
+  else {
+    const yMax = Math.max(...vals) * 1.15, Y = v => B.bot - v / yMax * (B.bot - B.top);
+    grid(B.top, B.bot, yMax, 'L', v => Math.round(v));
+    const shown = [];
+    for (const s of SERIES) {
+      const sp = pts.map(p => [p.t, num(p[s.k])]);
+      if (!sp.some(([, v]) => v != null)) continue;
+      shown.push([s.label, s.col]);
+      g.strokeStyle = s.col; g.fillStyle = s.col; g.setLineDash(s.dash); g.beginPath();
+      let pen = false;                                  // une valeur manquante coupe la ligne au lieu de la fausser
+      for (const [t, v] of sp) { if (v == null) { pen = false; continue; } pen ? g.lineTo(X(t), Y(v)) : g.moveTo(X(t), Y(v)); pen = true; }
+      g.stroke(); g.setLineDash([]);
+      for (const [t, v] of sp) if (v != null) {
+        g.beginPath(); g.arc(X(t), Y(v), s.ring ? 5 : 3, 0, 7);
+        if (s.ring) { g.lineWidth = 2; g.stroke(); g.lineWidth = 1; } else g.fill();
+      }
+    }
+    g.font = '12px "Share Tech Mono", monospace';
+    legend(shown, 248);
+  }
+  if (!vals.length) legend([['ton riven', '#4ac88a']], 248);
+
+  // --- axe du temps commun ---
+  g.fillStyle = '#7a8a9a'; g.strokeStyle = 'rgba(200,168,75,0.3)';
+  for (let k = 0; k <= 6; k++) {
+    const t = t0 + (t1 - t0) * k / 6, x = X(t), lbl = new Date(t).toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+    g.beginPath(); g.moveTo(x, B.bot); g.lineTo(x, B.bot + 4); g.stroke();
+    g.fillText(lbl, Math.min(x - g.measureText(lbl).width / 2, cv.width - g.measureText(lbl).width - 2), B.bot + 18);
+  }
+}
+function showVerdict(baro) {
+  const v = $('verdict');
+  if (!baro) { v.className = 'verdict inconnu'; v.textContent = 'Analyse du marché…'; return; }
+  if (!baro.ok) { v.className = 'verdict inconnu'; v.textContent = `Marché indisponible : ${baro.error}`; return; }
+  v.className = `verdict ${baro.verdict.level}`;
+  v.textContent = `${baro.verdict.text}  —  catégorie : ${baro.label}`;
+}
+async function showChart(i) {
+  const r = rivens[i];
+  $('chartSub').textContent = `${r.riven_name || ''}  ·  ${label(r).map(s => s.t).join(' · ')}  ·  MR ${r.mastery_level ?? '?'}, ` +
+    `${r.re_rolls ?? '?'} roll(s), polarité ${r.polarity || '?'}${r.suggested ? `  ·  conseillé ${r.suggested.price} pl` : ''}`;
+  let h = await window.riven.history(r), baro = null;
+  showVerdict(null); drawChart(r, h, null, 'chargement…');                // 1) tes données passées tout de suite
+  $('chart').showModal();
+  baro = await window.riven.barometer(r); showVerdict(baro);             // 2) marché de la catégorie (90 j)
+  drawChart(r, h, baro, 'mise à jour du prix…');
+  const p = await window.riven.price(r);                                 // 3) prix à jour de ton riven (cache 30 min)
+  if (p.ok) {                                                            // met la ligne à jour, sans toucher au prix saisi
+    Object.assign(r, { n: p.n, min: p.min, median: p.median, suggested: p.suggested });
+    await persist(); render();
+  } else log(`[Courbe] ${r.weapon} : ${p.error}`);
+  h = await window.riven.history(r);
+  drawChart(r, h, baro, p.ok ? `à jour ${new Date().toLocaleTimeString()}` : 'prix non mis à jour, voir le journal');
+}
+$('chartClose').onclick = () => $('chart').close();
+
+// Sécurité : "Envoyer pour de vrai" toujours décoché à l'affichage, même si Chromium restaure l'état
+// du formulaire (retour arrière / cache de navigation depuis la page Marché).
+window.addEventListener('pageshow', () => { $('live').checked = false; });
+
+(async () => { cfg = await window.riven.config(); await reload(); })();
+</script>
+</body>
+</html>

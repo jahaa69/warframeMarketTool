@@ -21,6 +21,8 @@
       "main.js",
       "preload.js",
       "database.js",
+      "rivenBackend.js",
+      "alecaframeImport.js",
       "public/**/*",
       "node_modules/**/*"
     ],

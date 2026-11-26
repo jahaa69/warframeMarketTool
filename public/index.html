@@ -193,6 +193,21 @@
       background: rgba(200, 74, 58, 0.1);
     }
 
+    /* Violet des mods Riven */
+    .btn.btn-rivens {
+      border-color: rgba(168, 102, 230, 0.45);
+      color: #b88cf0;
+      background: rgba(140, 82, 210, 0.08);
+      text-shadow: 0 0 6px rgba(168, 102, 230, 0.35);
+    }
+
+    .btn.btn-rivens:hover {
+      border-color: #a866e6;
+      color: #d4b5ff;
+      background: rgba(140, 82, 210, 0.22);
+      text-shadow: 0 0 8px rgba(190, 140, 255, 0.8);
+    }
+
     .status-bar {
       background: var(--bg-panel);
       border: 1px solid var(--border);
@@ -395,6 +410,33 @@
     }
 
     .details-info p { margin: 0; }
+
+    /* Tri par colonne */
+    th.sortable { cursor: pointer; user-select: none; transition: color 0.1s; }
+    th.sortable:hover { color: var(--gold); }
+    th.sorted { color: var(--gold); }
+    .sort-arrow { font-size: 9px; }
+
+    /* Pastille "moment de vendre" */
+    .moment { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+              letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; cursor: help; }
+    .moment .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
+    .moment.bon { color: var(--success); }
+    .moment.bon .dot { background: var(--success); box-shadow: 0 0 6px rgba(74, 200, 138, 0.7); }
+    .moment.moyen { color: var(--gold); }
+    .moment.moyen .dot { background: var(--gold); }
+    .moment.attendre { color: var(--accent-red); }
+    .moment.attendre .dot { background: var(--accent-red); }
+    .moment.inconnu, .moment.loading { color: var(--text-dim); }
+    .moment.loading .dot { animation: momentPulse 1s ease-in-out infinite; }
+    @keyframes momentPulse { 50% { opacity: 0.3; } }
+
+    /* Verdict "bon moment pour vendre ?" au-dessus de la courbe 90 jours */
+    .baro-verdict { font-size: 14px; font-weight: 600; padding: 7px 12px; border-left: 3px solid; }
+    .baro-verdict.bon { color: var(--success); border-color: var(--success); background: rgba(74, 200, 138, 0.08); }
+    .baro-verdict.moyen { color: var(--gold); border-color: var(--gold); background: var(--gold-glow); }
+    .baro-verdict.attendre { color: var(--accent-red); border-color: var(--accent-red); background: rgba(200, 74, 58, 0.08); }
+    .baro-verdict.inconnu { color: var(--text-muted); border-color: var(--text-dim); }
   </style>
 </head>
 <body>
@@ -406,7 +448,7 @@
 </header>
 
 <main class="main">
-
+  
   <div class="panels-row">
     <div class="panel">
       <div class="panel-header">
@@ -418,9 +460,10 @@
         <button class="btn btn-primary" id="Mod">Mod</button>
         <button class="btn btn-primary" id="Warframe">Warframe</button>
         <button class="btn btn-primary" id="Weapon">Weapon</button>
+        <a class="btn btn-rivens" href="rivens.html" style="text-decoration:none">Rivens</a>
       </div>
     </div>
-
+    
     <div class="panel">
       <div class="panel-header">
         <div class="marker"></div>
@@ -454,162 +497,203 @@
     bar.className = 'status-bar' + (state ? ' ' + state : '');
   };
 
+  // ---------- Tableau : pastille "moment de vendre" (90 j warframe.market) + tri sur chaque colonne ----------
+  // Construit avec createElement / textContent (les noms d'objets viennent de l'API).
+  const verdictCache = new Map();          // slug -> verdict { level, text, medPct… } (rempli par /api/statistics)
+  const LEVEL_ORDER = { bon: 0, moyen: 1, attendre: 2, inconnu: 3 };
+  const LEVEL_LABEL = { bon: 'Bon moment', moyen: 'Normal', attendre: 'Attendre', inconnu: '—' };
+  const slugOf = d => d.item_name || d.item || '';
+  const nameOf = d => slugOf(d).replace(/_/g, ' ');
+  const COLUMNS = [   // firstDir : sens du 1er clic (1 = croissant, -1 = décroissant)
+    { key: 'moment', label: 'Moment', firstDir: 1,          // bon d'abord, puis le prix le plus haut sur 90 j
+      value: d => { const v = verdictCache.get(slugOf(d)); return v ? LEVEL_ORDER[v.level] * 1000 - (v.medPct ?? 0) : 9999; } },
+    { key: 'name', label: 'Item', firstDir: 1, value: nameOf },
+    { key: 'price', label: 'Prix moyen', firstDir: -1, value: d => d.weightedAvgPrice ?? -1 },
+    { key: 'ratio', label: 'Liquidity score', firstDir: -1, value: d => d.ratio ?? -1 },
+  ];
+  const tableState = { data: [], mode: null, sortKey: 'ratio', sortDir: -1, expanded: new Set() };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const pause = ms => new Promise(r => setTimeout(r, ms));
+
+  function momentBadge(slug) {
+    const v = verdictCache.get(slug);
+    const b = el('span', `moment ${v ? v.level : 'loading'}`);
+    b.dataset.item = slug;
+    b.append(el('span', 'dot'), el('span', 'moment-label', v ? LEVEL_LABEL[v.level] : '…'));
+    b.title = v ? v.text : 'Analyse des 90 derniers jours sur warframe.market…';
+    return b;
+  }
+  function setVerdict(slug, verdict) {
+    verdictCache.set(slug, verdict);
+    document.querySelectorAll('.moment').forEach(m => { if (m.dataset.item === slug) m.replaceWith(momentBadge(slug)); });
+  }
+
+  // Charge les verdicts un par un en arrière-plan (cache 6 h côté main.js) ; abandonne si un autre tableau s'affiche
+  let verdictRun = 0;
+  async function loadVerdicts(slugs) {
+    const run = ++verdictRun;
+    for (const slug of slugs) {
+      if (run !== verdictRun) return;
+      if (verdictCache.has(slug)) continue;
+      for (let attempt = 0; attempt < 3 && !verdictCache.has(slug); attempt++) {
+        try {
+          const res = await fetch(`/api/statistics/${encodeURIComponent(slug)}`);
+          const s = await res.json();
+          if (res.ok) setVerdict(slug, s.verdict);
+          else if (/429/.test(s.error || '') && attempt < 2) await pause(5000 * (attempt + 1));   // trop de requêtes
+          else setVerdict(slug, { level: 'inconnu', text: `Indisponible : ${s.error || res.status}` });
+        } catch (e) { setVerdict(slug, { level: 'inconnu', text: `Indisponible : ${e.message}` }); }
+      }
+      await pause(350);
+    }
+  }
+
+  function renderTable() {
+    const { data, mode } = tableState;
+    const col = COLUMNS.find(c => c.key === tableState.sortKey);
+    const sorted = [...data].sort((a, b) => {
+      const x = col.value(a), y = col.value(b);
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * tableState.sortDir;
+    });
+    const maxRatio = Math.max(...data.map(d => d.ratio || 0));
+    const arrow = tableState.sortDir > 0 ? '▲' : '▼';
+
+    const wrap = el('div', 'table-wrap'), meta = el('div', 'table-meta'), title = el('div', 'table-title');
+    title.append(el('div', 'marker'), (mode || 'résultats').toUpperCase());
+    meta.append(title, el('span', 'table-count', `${data.length} items // trié par ${col.label.toLowerCase()} ${arrow}`));
+
+    const table = el('table'), thead = el('thead'), htr = el('tr');
+    for (const c of COLUMNS) {
+      const th = el('th', 'sortable' + (c.key === tableState.sortKey ? ' sorted' : ''), c.label);
+      if (c.key === tableState.sortKey) th.append(el('span', 'sort-arrow', ` ${arrow}`));
+      th.title = `Trier par ${c.label.toLowerCase()} (re-cliquer pour inverser)`;
+      th.onclick = () => {
+        if (tableState.sortKey === c.key) tableState.sortDir *= -1;
+        else { tableState.sortKey = c.key; tableState.sortDir = c.firstDir; }
+        renderTable();
+      };
+      htr.append(th);
+    }
+    thead.append(htr);
+
+    const tbody = el('tbody');
+    for (const d of sorted) {
+      const slug = slugOf(d), pct = maxRatio > 0 ? Math.round(((d.ratio || 0) / maxRatio) * 100) : 0;
+      const tr = el('tr', 'data-row');
+      tr.dataset.item = slug;
+      const tdMoment = el('td'); tdMoment.append(momentBadge(slug));
+      const tdItem = el('td'); tdItem.append(el('span', 'td-item', nameOf(d)));
+      const tdPrice = el('td'), price = el('span', 'td-price', String(d.weightedAvgPrice ?? '—'));
+      price.append(el('small', null, 'pt')); tdPrice.append(price);
+      const tdRatio = el('td'), bar = el('div', 'rank-bar'), track = el('div', 'rank-track'), fill = el('div', 'rank-fill');
+      fill.style.width = pct + '%'; track.append(fill);
+      bar.append(el('span', 'rank-val', String(d.ratio ?? '—')), track); tdRatio.append(bar);
+      tr.append(tdMoment, tdItem, tdPrice, tdRatio);
+
+      const details = el('tr', 'details-row'), open = tableState.expanded.has(slug);
+      details.style.display = open ? 'table-row' : 'none';
+      const td = el('td'); td.colSpan = COLUMNS.length;
+      const box = el('div', 'item-details'), canvas = el('canvas'), info = el('div', 'details-info');
+      canvas.id = `chart-${slug.replace(/[^a-zA-Z0-9]/g, '')}`; canvas.width = 400; canvas.height = 200;
+      const p1 = el('p'), p2 = el('p');
+      p1.append(el('strong', null, 'Quantité totale:'), ` ${d.totalQty || 'N/A'}`);
+      p2.append(el('strong', null, "Nombre d'ordres:"), ` ${d.orders || 'N/A'}`);
+      info.append(p1, p2); box.append(canvas, info); td.append(box); details.append(td);
+
+      tr.addEventListener('click', async () => {      // ouvre / ferme la courbe 90 jours (gardé ouvert après un tri)
+        if (details.style.display === 'none') { details.style.display = 'table-row'; tableState.expanded.add(slug); await loadItemDetails(slug); }
+        else { details.style.display = 'none'; tableState.expanded.delete(slug); }
+      });
+      tbody.append(tr, details);
+    }
+    table.append(thead, tbody);
+    wrap.append(meta, table);
+    document.getElementById('result').replaceChildren(wrap);
+    // après l'insertion dans la page : redessine les courbes des lignes restées ouvertes (sinon canvas introuvable)
+    tableState.expanded.forEach(slug => { if (data.some(d => slugOf(d) === slug)) loadItemDetails(slug); });
+  }
+
   window._renderTableStyled = function(data, mode) {
     const result = document.getElementById('result');
     if (!data || data.length === 0) {
-      result.innerHTML = '<div class="table-wrap"><div class="empty-state">Aucune donnée disponible</div></div>';
+      const wrap = el('div', 'table-wrap'); wrap.append(el('div', 'empty-state', 'Aucune donnée disponible'));
+      result.replaceChildren(wrap);
       return;
     }
-    const maxRatio = Math.max(...data.map(d => d.ratio || 0));
-    const rows = data.map(d => {
-      const name = (d.item_name || d.item || '').replace(/_/g, ' ');
-      const price = d.weightedAvgPrice ?? '—';
-      const ratio = d.ratio ?? '—';
-      const pct = maxRatio > 0 ? Math.round((ratio / maxRatio) * 100) : 0;
-      const itemSlug = d.item_name || d.item;
-      return `<tr class="data-row" data-item="${itemSlug}">
-        <td><span class="td-item">${name}</span></td>
-        <td><span class="td-price">${price}<small>pt</small></span></td>
-        <td><div class="rank-bar"><span class="rank-val">${ratio}</span><div class="rank-track"><div class="rank-fill" style="width:${pct}%"></div></div></div></td>
-      </tr>
-      <tr class="details-row" style="display: none;">
-        <td colspan="3">
-          <div class="item-details">
-            <canvas id="chart-${itemSlug.replace(/[^a-zA-Z0-9]/g, '')}" width="400" height="200"></canvas>
-            <div class="details-info">
-              <p><strong>Quantité totale:</strong> ${d.totalQty || 'N/A'}</p>
-              <p><strong>Nombre d'ordres:</strong> ${d.orders || 'N/A'}</p>
-            </div>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
-    result.innerHTML = `<div class="table-wrap">
-      <div class="table-meta">
-        <div class="table-title"><div class="marker"></div>${(mode || 'résultats').toUpperCase()}</div>
-        <span class="table-count">${data.length} items // trié par score de liquidité</span>
-      </div>
-      <table>
-        <thead><tr><th>Item</th><th>Prix moyen</th><th>Liquidity score</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-
-    // Ajouter les event listeners pour les détails
-    document.querySelectorAll('.data-row').forEach(row => {
-      row.addEventListener('click', async () => {
-        const itemSlug = row.dataset.item;
-        const detailsRow = row.nextElementSibling;
-        if (detailsRow.style.display === 'none') {
-          detailsRow.style.display = 'table-row';
-          await loadItemDetails(itemSlug);
-        } else {
-          detailsRow.style.display = 'none';
-        }
-      });
-    });
+    if (tableState.mode !== mode) tableState.expanded.clear();
+    tableState.data = data; tableState.mode = mode;
+    renderTable();
+    loadVerdicts(data.map(slugOf));
   };
 
+  // Courbe warframe.market sur 90 jours (ventes conclues) + verdict "bon moment pour vendre ?"
+  // Données : /api/statistics/:slug (main.js). Texte inséré avec textContent uniquement.
   async function loadItemDetails(itemSlug) {
+    const canvasId = `chart-${itemSlug.replace(/[^a-zA-Z0-9]/g, '')}`;
+    const canvas = document.getElementById(canvasId);
+    let verdict = canvas.parentElement.querySelector('.baro-verdict');
+    if (!verdict) {
+      verdict = document.createElement('div');
+      canvas.parentElement.insertBefore(verdict, canvas);
+    }
+    verdict.className = 'baro-verdict inconnu';
+    verdict.textContent = 'Chargement des 90 derniers jours sur warframe.market…';
     try {
-      const historicalData = await window.dbAPI.getHistoricalPrices(itemSlug);
-      const canvasId = `chart-${itemSlug.replace(/[^a-zA-Z0-9]/g, '')}`;
-      const canvas = document.getElementById(canvasId);
-
+      const res = await fetch(`/api/statistics/${encodeURIComponent(itemSlug)}`);
+      const stats = await res.json();
+      if (!res.ok) throw new Error(stats.error || `HTTP ${res.status}`);
       if (canvas.chart) canvas.chart.destroy();
 
-      if (!historicalData || historicalData.length === 0) {
-        canvas.style.display = 'none';
-        if (!canvas.parentElement.querySelector('.no-data-msg')) {
-          canvas.insertAdjacentHTML('afterend', '<p class="no-data-msg" style="color:#3a4a5a;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;padding:12px 0">Aucun historique — revenez après une prochaine initialisation</p>');
-        }
-        return;
-      }
-
+      if (!verdictCache.has(itemSlug)) setVerdict(itemSlug, stats.verdict);   // met aussi la pastille à jour
+      verdict.className = `baro-verdict ${stats.verdict.level}`;
+      verdict.textContent = stats.verdict.text + (stats.rank != null ? `  —  rang ${stats.rank}` : '');
+      if (!stats.series.length) { canvas.style.display = 'none'; return; }
       canvas.style.display = '';
-      canvas.parentElement.querySelector('.no-data-msg')?.remove();
 
-      const labels = historicalData.map(d => {
-        const [y, m, day] = d.date.split('-');
-        return `${day}/${m}/${y.slice(2)}`;
-      });
-      const prices = historicalData.map(d => d.price);
-      const minPrice = Math.min(...prices);
-      const maxPrice = Math.max(...prices);
+      const s = stats.series;
+      const labels = s.map(d => { const [, m, day] = d.date.split('-'); return `${day}/${m}`; });
       const ctx = canvas.getContext('2d');
-
       const gradient = ctx.createLinearGradient(0, 0, 0, 200);
       gradient.addColorStop(0, 'rgba(200, 168, 75, 0.25)');
       gradient.addColorStop(1, 'rgba(200, 168, 75, 0.0)');
+      const tick = { color: '#7a8a9a', font: { family: 'Share Tech Mono', size: 10 } };
 
       canvas.chart = new Chart(ctx, {
-        type: 'line',
         data: {
           labels,
-          datasets: [{
-            label: 'Prix moyen (pt)',
-            data: prices,
-            borderColor: '#c8a84b',
-            backgroundColor: gradient,
-            pointBackgroundColor: '#c8a84b',
-            pointBorderColor: '#0d1117',
-            pointBorderWidth: 1.5,
-            pointRadius: historicalData.length === 1 ? 5 : 3,
-            pointHoverRadius: 6,
-            borderWidth: 2,
-            tension: 0.35,
-            fill: true,
-          }]
+          datasets: [
+            { type: 'line', label: 'Prix médian (moy. 7 j)', data: s.map(d => d.med7 != null ? +d.med7.toFixed(1) : null),
+              yAxisID: 'y', borderColor: '#c8a84b', backgroundColor: gradient, fill: true, borderWidth: 2,
+              pointRadius: 0, pointHoverRadius: 4, tension: 0.35, order: 1 },
+            { type: 'line', label: 'Prix médian du jour', data: s.map(d => d.med != null ? +d.med.toFixed(1) : null),
+              yAxisID: 'y', borderColor: 'rgba(200, 168, 75, 0.45)', borderWidth: 1, borderDash: [3, 3],
+              pointRadius: 0, pointHoverRadius: 3, tension: 0.2, order: 2 },
+            { type: 'bar', label: 'Ventes / jour', data: s.map(d => d.vol), yAxisID: 'y1',
+              backgroundColor: 'rgba(58, 143, 200, 0.28)', borderWidth: 0, order: 3 },
+          ]
         },
         options: {
           responsive: true,
           interaction: { intersect: false, mode: 'index' },
           plugins: {
-            legend: {
-              labels: {
-                color: '#7a8a9a',
-                font: { family: 'Rajdhani', size: 11 },
-                boxWidth: 12,
-              }
-            },
+            legend: { labels: { color: '#7a8a9a', font: { family: 'Rajdhani', size: 11 }, boxWidth: 12 } },
             tooltip: {
-              backgroundColor: '#111820',
-              borderColor: 'rgba(200, 168, 75, 0.35)',
-              borderWidth: 1,
-              titleColor: '#7a8a9a',
-              bodyColor: '#c8a84b',
-              padding: 10,
-              callbacks: {
-                label: ctx => `  ${ctx.parsed.y} pt`
-              }
+              backgroundColor: '#111820', borderColor: 'rgba(200, 168, 75, 0.35)', borderWidth: 1,
+              titleColor: '#7a8a9a', bodyColor: '#c8a84b', padding: 10,
+              callbacks: { label: c => `  ${c.dataset.label} : ${c.parsed.y}${c.dataset.yAxisID === 'y' ? ' pt' : ''}` }
             }
           },
           scales: {
-            y: {
-              beginAtZero: false,
-              min: Math.max(0, minPrice - Math.ceil((maxPrice - minPrice) * 0.15 + 1)),
-              grid: { color: 'rgba(200, 168, 75, 0.08)', drawBorder: false },
-              ticks: {
-                color: '#7a8a9a',
-                font: { family: 'Share Tech Mono', size: 10 },
-                callback: v => v + ' pt'
-              }
-            },
-            x: {
-              grid: { color: 'rgba(200, 168, 75, 0.04)', drawBorder: false },
-              ticks: {
-                color: '#7a8a9a',
-                font: { family: 'Share Tech Mono', size: 10 },
-                maxRotation: 45,
-                autoSkip: true,
-                maxTicksLimit: 10,
-              }
-            }
+            y: { position: 'left', grid: { color: 'rgba(200, 168, 75, 0.08)' }, ticks: { ...tick, callback: v => v + ' pt' } },
+            y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { ...tick, callback: v => v + ' /j' } },
+            x: { grid: { color: 'rgba(200, 168, 75, 0.04)' }, ticks: { ...tick, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } }
           }
         }
       });
     } catch (error) {
       console.error('Erreur lors du chargement des détails:', error);
+      verdict.className = 'baro-verdict inconnu';
+      verdict.textContent = `Courbe warframe.market indisponible : ${error.message}`;
     }
   }
 </script>

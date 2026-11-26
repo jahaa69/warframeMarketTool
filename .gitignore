@@ -83,3 +83,27 @@ release/
 # Build directories
 dist/
 build/
+# Rivens : données locales (peuvent contenir l'inventaire / les annonces)
+rivens.json
+price_history.json
+finder_history.json
+rivens.json.bak
+derniere_capture_ocr.png
+# Export d inventaire Warframe (données du compte)
+dataUser.json
+
+# Variantes du .env (seul .env.example est versionné)
+.env.*
+!.env.example
+
+# Réglages locaux de Claude Code
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+
+# Captures d'écran et données locales des rivens (inventaire, annonces, sauvegardes)
+ocrRiven/*.png
+*.bak
+notif_state.json

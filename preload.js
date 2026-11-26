@@ -9,3 +9,18 @@ contextBridge.exposeInMainWorld('dbAPI', {
   getMarketData: (mode) => ipcRenderer.invoke('get-market-data', mode),
   clearTodayData: (mode) => ipcRenderer.invoke('clear-today-data', mode),
 });
+
+// Page Rivens : expose uniquement ces fonctions (jamais le token, jamais fs ni child_process).
+contextBridge.exposeInMainWorld('riven', {
+  config:  ()            => ipcRenderer.invoke('riven:config'),
+  load:    ()            => ipcRenderer.invoke('riven:load'),
+  save:    rivens        => ipcRenderer.invoke('riven:save', rivens),
+  price:   r             => ipcRenderer.invoke('riven:price', r),
+  history: r             => ipcRenderer.invoke('riven:history', r),
+  sell:    args          => ipcRenderer.invoke('riven:sell', args),
+  unsell:  args          => ipcRenderer.invoke('riven:unsell', args),
+  ocr:     args          => ipcRenderer.invoke('riven:ocr', args),
+  import:  args          => ipcRenderer.invoke('riven:import', args),
+  barometer: r           => ipcRenderer.invoke('riven:barometer', r),
+  finder:  args          => ipcRenderer.invoke('riven:finder', args),
+});
